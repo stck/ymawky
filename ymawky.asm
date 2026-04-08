@@ -29,9 +29,6 @@ head_response:
 line_breaks:
     .ascii "\r\n\r\n"
 .equ line_breaks_len, . - line_breaks
-;response:
-;    .asciz "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nhi\n"
-;.equ response_len, . - response
 
 .bss
 buf: .skip BUF_SIZE
@@ -90,13 +87,17 @@ loop:
     mov x2, BUF_SIZE
     svc #0x80
 
+    ;; TODO:
+    ;; parse the first line of buf, which is the request
+    ;; search for GET /*, find the filename being requested
+    ;; then store that filename as a string, and serve that file
+
     ;; If nothing is read, quit!
     cbz x0, exit
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write
     mov x0, x21
-    ;mov x0, #1
     adrp x1, head_response@PAGE
     add x1, x1, head_response@PAGEOFF
     mov x2, head_response_len
@@ -115,7 +116,6 @@ test:
     ;; write content-length
     mov x16, SYS_write
     mov x0, x21
-    ;mov x0, #1
     mov x1, x24
     mov x2, x25
     svc #0x80
@@ -123,7 +123,6 @@ test:
     ;; Write the \r\n\r\n
     mov x16, SYS_write
     mov x0, x21
-    ;mov x0, #1
     adrp x1, line_breaks@PAGE
     add x1, x1, line_breaks@PAGEOFF
     mov x2, line_breaks_len
@@ -132,7 +131,6 @@ test:
     ;; Write the contents of index.html
     mov x16, SYS_write
     mov x0, x21
-    ;mov x0, #1
     mov x1, x22
     mov x2, x23
     svc #0x80
@@ -141,7 +139,6 @@ test:
     mov x2, x0
     mov x16, SYS_write
     mov x0, #1
-    ;mov x0, x21
     adrp x1, buf@PAGE
     add x1, x1, buf@PAGEOFF
     svc #0x80
