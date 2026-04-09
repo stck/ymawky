@@ -36,3 +36,9 @@
 .equ BUF_SIZE, 16384
 .equ FILE_SIZE_MAX, 65536
 
+;; File extension types
+.equ FILETYPE_ERR, 0
+.equ FILETYPE_HTML, 1
+.equ FILETYPE_CSS, 2
+.equ FILETYPE_JS, 3
+.equ FILETYPE_UNKNOWN, 4

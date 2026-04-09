@@ -15,6 +15,10 @@ head_response:
     .ascii "HTTP/1.1 200 OK\r\nContent-Length: "
 .equ head_response_len, . - head_response
 
+head_content_type:
+    .ascii "\r\nContent-Type: "
+.equ head_content_type_len, . - head_content_type
+
 line_breaks:
     .ascii "\r\n\r\n"
 .equ line_breaks_len, . - line_breaks
@@ -29,6 +33,7 @@ sockfd:             .skip 8
 clientfd:           .skip 8
 read_bytes:         .skip 8
 filename_str:       .skip 8
+filename_len:       .skip 8
 file_contents:      .skip 8
 file_length:        .skip 8
 content_length_str: .skip 8
@@ -100,7 +105,9 @@ loop:
     adr_l x0, buf
     bl parse_path
     ;; store the filename from parse_path into filename_str
+    ;; and the length into x1
     str_l x0, filename_str
+    str_l x1, filename_len
 
     ;; we gotta try to read the file before sending the header. if read_file
     ;; fails, we gotta 404
@@ -133,6 +140,27 @@ loop:
     ldr_l x0, clientfd
     ldr_l x1, content_length_str
     ldr_l x2, content_length_len
+    svc #0x80
+
+    ;; Write \r\nContent-Type: 
+    mov x16, SYS_write
+    ldr_l x0, clientfd
+    adr_l x1, head_content_type
+    mov x2, head_content_type_len
+    svc #0x80
+
+    ;;; XXX
+    ;; Get content type
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
+    bl get_filetype
+
+    ;; Now x0 is content-type string, x1 is the length of said string
+    ;; write the content type to clientfd
+    mov x16, SYS_write
+    mov x2, x1 ;; length
+    mov x1, x0 ;; string
+    ldr_l x0, clientfd
     svc #0x80
 
     ;; Write the \r\n\r\n

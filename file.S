@@ -4,6 +4,7 @@
 .global strlen
 .global read_file
 .global parse_path
+.global get_filetype
 .align 4
 
 .bss
@@ -12,7 +13,26 @@ itoa_buf: .skip 20
 filename_buf: .skip 4096 ;; probably way too defensive, but can't hurt, eh?
 
 .data
-filename: .asciz "./index.html"
+html_ext: .asciz ".html"
+.equ html_ext_len, . - html_ext
+
+js_ext: .asciz ".js"
+.equ js_ext_len, . - js_ext
+
+css_ext: .asciz ".css"
+.equ css_ext_len, . - css_ext
+
+html_ct: .ascii "text/html"
+.equ html_ct_len, . - html_ct
+
+css_ct: .ascii "text/css"
+.equ css_ct_len, . - css_ct
+
+js_ct: .ascii "text/javascript"
+.equ js_ct_len, . - js_ct
+
+unknown_ct: .ascii "text/plain"
+.equ unknown_ct_len, . - unknown_ct
 
 .text
 ;; input
@@ -50,13 +70,42 @@ itoa:
 ;;
 ;; clobbers x0, x1, and x3
 strlen:
-    eor x0, x0, x0
+    mov x0, #0
 1:
     ldrb w3, [x1, x0] ; w3 = x1[x0]
     cbz w3, 2f ; jump to 2 if w3 is 0. end of string
     add x0, x0, #1
     b 1b
 2:
+    ret
+
+;; input
+;; x0 -> str1
+;; x1 -> str2
+;; x2 -> max length
+;;
+;; returns
+;; x0 -> 1 if match, 0 if doesn't match
+strcmp:
+    ldrb w3, [x0]
+    ldrb w4, [x1]
+    cmp w3, w4
+    b.ne _no_match
+
+    ;; if we've reached the end, it's a match yeah?
+    subs x2, x2, #1
+    b.eq _match
+
+    add x0, x0, #1
+    add x1, x1, #1
+    b strcmp
+
+_match:
+    mov x0, #1
+    ret
+
+_no_match:
+    mov x0, #0
     ret
 
 ;; input
@@ -144,3 +193,87 @@ parse_path:
     mov x1, x2 ; x1 is the length of the filename
     ret
 
+;; input
+;; x0 -> filename
+;; x1 -> filename length
+;;
+;; returns
+;; x0 -> content-type string (eg text/html)
+;; x1 -> length of content-type string
+;; x2 -> filetype const from defs.S, eg, FILETYPE_HTML (1).
+get_filetype:
+    ;; push the link register to the stack sorta. since we bl strcmp, we need
+    ;; to preserve it
+    stp x29, x30, [sp, #-16]!
+    mov x4, x0 ; save the start pointer
+    add x0, x0, x1 ; now x0 points to one past the end of the string
+
+1:
+    sub x0, x0, #1
+    ldrb w3, [x0]
+    cmp w3, #'.'
+    b.eq _found_extension
+
+    ; are we at the start again? if so, no file extension was present.
+    cmp x0, x4
+    b.eq _return_unknown
+
+    b 1b
+
+;; Ok, now x0 is pointing at the '.' in the filename
+_found_extension:
+    mov x5, x0 ;; save this position
+
+1:
+    ;; is it .html?
+    adr_l x1, html_ext
+    mov x2, html_ext_len
+    bl strcmp
+    cbnz x0, _return_html
+
+    ;; nope. how about .css?
+    mov x0, x5
+    adr_l x1, css_ext
+    mov x2, css_ext_len
+    bl strcmp
+    cbnz x0, _return_css
+
+    ;; nope. how about .js?
+    mov x0, x1
+    adr_l x1, js_ext
+    mov x2, js_ext_len
+    bl strcmp
+    cbnz x0, _return_js
+
+    ;; none of em. unknown file extension
+    b _return_unknown
+
+
+_return_html:
+    adr_l x0, html_ct
+    mov x1, html_ct_len
+    mov x2, FILETYPE_HTML
+    b _return
+
+_return_css:
+    adr_l x0, css_ct
+    mov x1, css_ct_len
+    mov x2, FILETYPE_CSS
+    b _return
+
+_return_js:
+    adr_l x0, js_ct
+    mov x1, js_ct_len
+    mov x2, FILETYPE_JS
+    b _return
+
+_return_unknown:
+    adr_l x0, unknown_ct
+    mov x1, unknown_ct_len
+    mov x2, FILETYPE_UNKNOWN
+    b _return
+
+_return:
+    ;; restore the link register we pushed to the stack
+    ldp x29, x30, [sp], #16
+    ret
