@@ -30,6 +30,10 @@ line_breaks:
     .ascii "\r\n\r\n"
 .equ line_breaks_len, . - line_breaks
 
+head_404:
+    .ascii "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+.equ head_404_len, . - head_404
+
 .bss
 buf: .skip BUF_SIZE
 
@@ -86,54 +90,7 @@ loop:
     add x1, x1, buf@PAGEOFF
     mov x2, BUF_SIZE
     svc #0x80
-
-    ;; TODO:
-    ;; parse the first line of buf, which is the request
-    ;; search for GET /*, find the filename being requested
-    ;; then store that filename as a string, and serve that file
-
-    ;; If nothing is read, quit!
-    cbz x0, exit
-
-    ;; write(clientfd, response, response_len)
-    mov x16, SYS_write
-    mov x0, x21
-    adrp x1, head_response@PAGE
-    add x1, x1, head_response@PAGEOFF
-    mov x2, head_response_len
-    svc #0x80
-
-test:   
-    bl _read_file ; this just reads index.html currently
-    mov x22, x0 ; pointer to file content string
-    mov x23, x1 ; bytes read
-
-    mov x0, x1 ; load x0 with bytes read for itoa
-    bl _itoa
-    mov x24, x0 ; pointer to start of string
-    mov x25, x1 ; length of string
-
-    ;; write content-length
-    mov x16, SYS_write
-    mov x0, x21
-    mov x1, x24
-    mov x2, x25
-    svc #0x80
-
-    ;; Write the \r\n\r\n
-    mov x16, SYS_write
-    mov x0, x21
-    adrp x1, line_breaks@PAGE
-    add x1, x1, line_breaks@PAGEOFF
-    mov x2, line_breaks_len
-    svc #0x80
-
-    ;; Write the contents of index.html
-    mov x16, SYS_write
-    mov x0, x21
-    mov x1, x22
-    mov x2, x23
-    svc #0x80
+    ;mov x0, x27 ; save the length of this
 
     ;; this just writes the request to stdout
     mov x2, x0
@@ -143,12 +100,123 @@ test:
     add x1, x1, buf@PAGEOFF
     svc #0x80
 
+    ;; TODO:
+    ;; parse the first line of buf, which is the request
+    ;; search for GET /*, find the filename being requested
+    ;; then store that filename as a string, and serve that file
+
+    ;; If nothing is read, quit!
+    cbz x0, exit
+
+    ;; TODO:
+    ;; x1 should already point to buf from the read call above. can i just
+    ;; mov x0, x1? or does read() clobber x1?
+    adrp x0, buf@PAGE
+    add x0, x0, buf@PAGEOFF
+    bl parse_path
+    mov x26, x0 ; store filename in x26
+    ;mov x27, x1 ; store filename length in x27
+
+bpoint:
+    ;; we gotta try to read the file before sending the header. if read_file
+    ;; fails, we gotta 404
+    mov x0, x26
+    bl read_file
+    ;; if the read_file failed, file doesn't exist. so we reply 404.
+    ;; reply_404 jumps back to the end of the loop, where we close the
+    ;; connection and open a new one
+    b.cs reply_404
+    ;;cmp x0, #0
+    ;;b.lt reply_404
+    mov x22, x0 ; pointer to file content string
+    mov x23, x1 ; bytes read from file, aka file size (must be <65536 rn)
+
+    ;; write(clientfd, response, response_len) to stdout
+    ;mov x16, SYS_write
+    ;mov x0, #1
+    ;adrp x1, head_response@PAGE
+    ;add x1, x1, head_response@PAGEOFF
+    ;mov x2, head_response_len
+    ;svc #0x80
+    ;; write(clientfd, response, response_len)
+    mov x16, SYS_write
+    mov x0, x21
+    adrp x1, head_response@PAGE
+    add x1, x1, head_response@PAGEOFF
+    mov x2, head_response_len
+    svc #0x80
+
+    mov x0, x23 ; load x0 with bytes read for itoa
+    bl itoa
+    mov x24, x0 ; pointer to start of string
+    mov x25, x1 ; length of string
+
+    ;; write content-length to stdout
+    ;mov x16, SYS_write
+    ;mov x0, #1
+    ;mov x1, x24
+    ;mov x2, x25
+    ;svc #0x80
+    ;; write content-length
+    mov x16, SYS_write
+    mov x0, x21
+    mov x1, x24
+    mov x2, x25
+    svc #0x80
+
+    ;; Write the \r\n\r\n to stdout
+    ;mov x16, SYS_write
+    ;mov x0, #1
+    ;adrp x1, line_breaks@PAGE
+    ;add x1, x1, line_breaks@PAGEOFF
+    ;mov x2, line_breaks_len
+    ;svc #0x80
+    ;; Write the \r\n\r\n
+    mov x16, SYS_write
+    mov x0, x21
+    adrp x1, line_breaks@PAGE
+    add x1, x1, line_breaks@PAGEOFF
+    mov x2, line_breaks_len
+    svc #0x80
+
+    ;; Write the contents of index.html to stdout
+    ;mov x16, SYS_write
+    ;mov x0, #1
+    ;mov x1, x22
+    ;mov x2, x23
+    ;svc #0x80
+    ;; Write the contents of index.html
+    mov x16, SYS_write
+    mov x0, x21
+    mov x1, x22
+    mov x2, x23
+    svc #0x80
+
+loop_end:
     ;; close(clientfd)
     mov x16, SYS_close
     mov x0, x21
     svc #0x80
 
     b loop
+
+reply_404:
+    ; write to stdout
+    mov x16, SYS_write
+    mov x0, #1
+    adrp x1, head_404@PAGE
+    add x1, x1, head_404@PAGEOFF
+    mov x2, head_404_len
+    svc #0x80
+    ; write to socket
+    mov x16, SYS_write
+    mov x0, x21
+    adrp x1, head_404@PAGE
+    add x1, x1, head_404@PAGEOFF
+    mov x2, head_404_len
+    svc #0x80
+
+    b loop_end
 
 exit:
     ;; shutdown(sockfd, SHUT_RDRW)
