@@ -36,6 +36,10 @@
 .equ BUF_SIZE, 16384
 .equ FILE_SIZE_MAX, 65536
 
+;; request type ids
+.equ HEAD_REQ_ID, 0
+.equ GET_REQ_ID, 1
+
 ;; File extension types
 .equ FILETYPE_ERR, 0
 .equ FILETYPE_HTML, 1

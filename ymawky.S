@@ -20,15 +20,32 @@ head_content_type:
 .equ head_content_type_len, . - head_content_type
 
 line_breaks:
-    .ascii "\r\n\r\n"
+    .ascii "Allow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
 .equ line_breaks_len, . - line_breaks
 
+get_req:
+    .ascii "GET "
+.equ get_req_len, . - get_req
+
+head_req:
+    .ascii "HEAD "
+.equ head_req_len, . - head_req
+
+head_400:
+    .ascii "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
+.equ head_400_len, . - head_400
+
+head_501:
+    .ascii "HTTP/1.1 501 Not Implemented\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
+.equ head_501_len, . - head_501
+
 head_404:
-    .ascii "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+    .ascii "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
 .equ head_404_len, . - head_404
 
 .bss
-buf:                .skip BUF_SIZE
+;; + 1 so we can NULL terminate, even if content is BUF_SIZE bytes long
+buf:                .skip BUF_SIZE + 1
 sockfd:             .skip 8
 clientfd:           .skip 8
 read_bytes:         .skip 8
@@ -91,6 +108,13 @@ loop:
     mov x2, BUF_SIZE
     svc #0x80
 
+    ;; If nothing is read, quit!
+    cbz x0, exit
+
+    ;; let's make sure buf is NULL terminated
+    adr_l x1, buf
+    strb wzr, [x1, x0] ; x0 -> length of bytes read
+
     ;; this just writes the request to stdout
     mov x2, x0
     mov x16, SYS_write
@@ -98,12 +122,43 @@ loop:
     adr_l x1, buf
     svc #0x80
 
-    ;; If nothing is read, quit!
-    cbz x0, exit
+    ;; check if we got a GET request. if so, jump to get!
+    adr_l x0, buf
+    adr_l x1, get_req
+    mov x2, get_req_len
+    bl strcmp
 
-    ;; x1 should already point to buf from the read call above.
+    cmp x0, #1
+    b.eq 1f
+
+    ;; check if maybe we got a HEAD request instead.
+    adr_l x0, buf
+    adr_l x1, head_req
+    mov x2, head_req_len
+    bl strcmp
+
+    cmp x0, #1
+    b.eq 2f
+
+    ;; if it was neither, reply 501
+    b reply_501
+
+1:
+    mov x20, GET_REQ_ID
+    b get
+
+2:
+    mov x20, HEAD_REQ_ID
+    b get
+
+get:
+    ;; parse GET /..., extract the filename we're GETting.
     adr_l x0, buf
     bl parse_path
+
+    cmp x0, #0 ; did parse_path return null? if so we gotta send a 400
+    b.eq reply_400
+
     ;; store the filename from parse_path into filename_str
     ;; and the length into x1
     str_l x0, filename_str
@@ -170,6 +225,12 @@ loop:
     mov x2, line_breaks_len
     svc #0x80
 
+    ;; x20 is the request type, currently GET or HEAD.
+    ;; if it's a HEAD request, we just want to output the header, which we've
+    ;; done, so jump to the end
+    cmp x20, HEAD_REQ_ID
+    b.eq loop_end
+
     ;; Write the contents of the requested file
     mov x16, SYS_write
     ldr_l x0, clientfd
@@ -184,6 +245,40 @@ loop_end:
     svc #0x80
 
     b loop
+
+reply_501:
+    ; write to stdout
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, head_501
+    mov x2, head_501_len
+    svc #0x80
+
+    ; write to socket
+    mov x16, SYS_write
+    ldr_l x0, clientfd
+    adr_l x1, head_501
+    mov x2, head_501_len
+    svc #0x80
+
+    b loop_end
+
+reply_400:
+    ; write to stdout
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, head_400
+    mov x2, head_400_len
+    svc #0x80
+
+    ; write to socket
+    mov x16, SYS_write
+    ldr_l x0, clientfd
+    adr_l x1, head_400
+    mov x2, head_400_len
+    svc #0x80
+
+    b loop_end
 
 reply_404:
     ; write to stdout
