@@ -1,21 +1,13 @@
-ymawky: FORCE
-	cc -c ymawky.S -o ymawky.o
-	cc -c file.S -o file.o
-	ld ymawky.o file.o -o ymawky -l System -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -e _main -arch arm64
-	make clean
+SRCS := $(wildcard src/*.S)
+OBJS := $(SRCS:src/%.S=%.o)
+LDFLAGS := -l System -syslibroot $(shell xcrun --sdk macosx --show-sdk-path) -e _main -arch arm64
 
-FORCE:
+ymawky: $(OBJS)
+	ld $(OBJS) -o ymawky $(LDFLAGS)
+	rm -f $(OBJS)
+
+%.o: src/%.S $(SRCS)
+	cc -g -c $< -o $@
 
 clean:
-	-rm ymawky.o file.o
-
-clean-exe:
-	-rm ymawky
-
-clean-all:
-	-make clean
-	-make clean-exe
-
-all:
-	make clean
-	make ymawky
+	rm -f ymawky $(OBJS)
