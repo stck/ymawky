@@ -9,7 +9,7 @@
 
 .data
 head_response:
-    .ascii "HTTP/1.1 200 OK\r\nContent-Length: "
+    .ascii "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
 .equ head_response_len, . - head_response
 
 head_content_type:

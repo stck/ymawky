@@ -34,38 +34,66 @@ unknown_ct: .ascii "text/plain"
 ;;
 ;; returns
 ;; x0 -> 1 if safe, 0 if unsafe
+;;
+;; clobbers
+;; x2 -> index into string
+;; x3 -> dot count per segment
+;; x4 -> segment length
 check_path_safety:
     mov x2, #0
+    mov x3, #0
+    mov x4, #0
 
-1:
-    ;; if we're at the end of the string and there's no match yet, finish up
+_loop:
+    cmp x2, x1
+    b.ge _check_segment
+
+    ldrb w5, [x0, x2]
+
+    cmp w5, #'/'
+    b.eq _check_segment
+
+    cmp w5, #0
+    b.eq _check_segment
+
+    add x2, x2, #1
+    add x4, x4, #1
+
+    cmp w5, #'.'
+    b.eq 2f
+
+    b _loop
+
+2:
+    add x3, x3, #1
+    b _loop
+
+_check_segment:
+    cmp x3, x4
+    b.eq _equal_length
+
+3:
+    mov x3, #0
+    mov x4, #0
+
     cmp x2, x1
     b.ge _safe_path
 
-    ldrb w3, [x0]
-    ldrb w4, [x0, #1]
-
-    ;; check if x0 and x0+1 are both .
-    cmp w3, #'.'
-    b.ne _loop_again
-
-    cmp w4, #'.'
-    b.ne _loop_again
-
-    ;; if we got here, both bytes were '.'
-    b _unsafe_path
-
-_loop_again:
     add x2, x2, #1
-    add x0, x0, #1
-    b 1b
+    b _loop
 
-_unsafe_path:
-    mov x0, #0
-    ret
+_equal_length:
+    cmp x3, #2
+    b.eq _unsafe_path
+
+    b 3b
 
 _safe_path:
     mov x0, #1
+    ret
+
+_unsafe_path:
+    mov x0, #0
     ret
 
 ;; input

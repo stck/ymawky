@@ -2,6 +2,8 @@
 
 .global itoa
 .global strlen
+.global memcpy
+
 .align 4
 
 .bss
@@ -37,18 +39,19 @@ itoa:
     ret
 
 ;; input
-;; x1 -> pointer to string (must be NULL terminated)
+;; x0 -> destination
+;; x1 -> source
+;; x2 -> length
 ;; 
-;; returns
-;; x0 -> length of string
-;;
 ;; clobbers x0, x1, and x3
-strlen:
-    mov x0, #0
+memcpy:
+    cbz x2, 1f
+
+    ldrb w3, [x1], #1
+    strb w3, [x0], #1
+
+    sub x2, x2, #1
+    b memcpy
+
 1:
-    ldrb w3, [x1, x0] ; w3 = x1[x0]
-    cbz w3, 2f ; jump to 2 if w3 is 0. end of string
-    add x0, x0, #1
-    b 1b
-2:
     ret

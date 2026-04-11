@@ -7,6 +7,10 @@
 ;; this is PATH_MAX
 .equ filename_buf_size, 4096
 
+.data
+www_prefix: .ascii "www/"
+.equ www_prefix_len, . - www_prefix
+
 .bss
 ;; probably way too defensive, but can't hurt, eh?
 filename_buf: .skip filename_buf_size + 1
@@ -22,6 +26,8 @@ filename_buf: .skip filename_buf_size + 1
 ;;
 ;; clobbers x0, x1, x2, x3
 parse_path:
+    ;; preserve link register so we can bl to other functions properly
+    stp x29, x30, [sp, #-16]!
     mov x1, #0
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
@@ -67,8 +73,24 @@ parse_path:
     ;; load in filename_buf to x1
     adr_l x1, filename_buf
 
+    mov x8, x3
+    mov x7, x2
+    mov x6, x1
+    mov x5, x0
+
+    mov x0, x6
+    adr_l x1, www_prefix
+    mov x2, www_prefix_len
+    bl memcpy
+
+    mov x0, x5
+    mov x1, x6
+    mov x2, x7
+    mov x3, x8
+    mov x4, www_prefix_len
+
 2:
-    cmp x2, filename_buf_size ; bounds check
+    cmp x4, filename_buf_size ; bounds check
     b.ge 4f
 
     ldrb w3, [x0, x2] ; load byte from header+index
@@ -84,21 +106,27 @@ parse_path:
     b.eq 4f
 
     ;; ok, we're not done
-    strb w3, [x1, x2] ; copy byte to filename_buf+index
-    add x2, x2, #1 ; increment the index
+    strb w3, [x1, x4] ; copy byte to filename_buf+index
+    add x4, x4, #1 ; increment the filename index
+    add x2, x2, #1 ; increment the header index
     b 2b ; and loop
 
 3:
-    strb wzr, [x1, x2] ;; null-terminate filename_buf
+    strb wzr, [x1, x4] ;; null-terminate filename_buf
     mov x0, x1 ; we want x0 to point to the filename string
-    mov x1, x2 ; x1 is the length of the filename
-    ret
+    mov x1, x4 ; x1 is the length of the filename
+    b 5f
 
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
 4:
     mov x0, #0
     mov x1, #0
+    b 5f
+
+5:
+    ;; restore the link register and ret
+    ldp x29, x30, [sp], #16
     ret
 
 ;; input
