@@ -20,26 +20,27 @@
 .endm
 
 ;; syscalls
-.equ SYS_exit, 1
-.equ SYS_read, 3
-.equ SYS_write, 4
-.equ SYS_open, 5
-.equ SYS_close, 6
-.equ SYS_accept, 30
-.equ SYS_socket, 97
-.equ SYS_bind, 104
+.equ SYS_exit,       1
+.equ SYS_fork,       2
+.equ SYS_read,       3
+.equ SYS_write,      4
+.equ SYS_open,       5
+.equ SYS_close,      6
+.equ SYS_accept,     30
+.equ SYS_munmap,     73
+.equ SYS_socket,     97
+.equ SYS_bind,       104
 .equ SYS_setsockopt, 105
-.equ SYS_listen, 106
-.equ SYS_shutdown, 134
-.equ SYS_lseek, 199
-.equ SYS_mmap, 197
-.equ SYS_munmap, 73
+.equ SYS_listen,     106
+.equ SYS_shutdown,   134
+.equ SYS_mmap,       197
+.equ SYS_lseek,      199
 
 ;; constants
-.equ BUF_SIZE, 16384
-.equ FILE_SIZE_MAX, 65536
+.equ BUF_SIZE,       16384
+.equ FILE_SIZE_MAX,  65536
 
 ;; request type ids
-.equ HEAD_REQ_ID, 0
-.equ GET_REQ_ID, 1
+.equ HEAD_REQ_ID,    0
+.equ GET_REQ_ID,     1
 .equ OPTIONS_REQ_ID, 2

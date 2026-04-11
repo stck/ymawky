@@ -77,6 +77,29 @@ loop:
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
 
+    ;; fork()
+    mov x16, SYS_fork
+    svc #0x80
+    ;; if it fails, we just want to close clientfd and loop anyway, so there's
+    ;; no particular error handling/b.cs here.
+
+    ;; if we're in the child, go there
+    cmp x1, #1
+    b.eq _child
+
+    ;; otherwise close clientfd and loop
+    mov x16, SYS_close
+    ldr_l x0, clientfd
+    svc #0x80
+
+    b loop
+
+_child:
+    ;; close sockfd
+    mov x16, SYS_close
+    ldr_l x0, sockfd
+    svc #0x80
+
     ;; read(client_fd, buffer, buffer_size)
     mov x16, SYS_read
     ldr_l x0, clientfd
@@ -147,7 +170,10 @@ loop_end:
     ldr_l x0, clientfd
     svc #0x80
 
-    b loop
+    ;; This is always for children, so let's exit. the parent will loop
+    mov x16, SYS_exit
+    mov x0, #0
+    svc #0x80
 
 exit:
     ;; shutdown(sockfd, SHUT_RDRW)
