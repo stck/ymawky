@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global get
+.global reply_204
 .global reply_400
 .global reply_404
 .global reply_501
@@ -19,17 +20,25 @@ line_breaks:
     .ascii "\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
 .equ line_breaks_len, . - line_breaks
 
-head_400:
-    .ascii "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
-.equ head_400_len, . - head_400
+header_400:
+    .ascii "HTTP/1.1 400 Bad Request"
+.equ header_400_len, . - header_400
 
-head_501:
-    .ascii "HTTP/1.1 501 Not Implemented\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
-.equ head_501_len, . - head_501
+header_501:
+    .ascii "HTTP/1.1 501 Not Implemented"
+.equ header_501_len, . - header_501
 
-head_404:
-    .ascii "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
-.equ head_404_len, . - head_404
+header_404:
+    .ascii "HTTP/1.1 404 Not Found"
+.equ header_404_len, . - header_404
+
+header_204:
+    .ascii "HTTP/1.1 204 No Content\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
+.equ header_204_len, . - header_204
+
+header_tail:
+    .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
+.equ header_tail_len, . - header_tail
 
 .bss
 filename_str:       .skip 8
@@ -135,53 +144,65 @@ get:
 1:
     b loop_end
 
-reply_501:
+reply_204:
     ; write to stdout
     mov x16, SYS_write
     mov x0, #1
-    adr_l x1, head_501
-    mov x2, head_501_len
+    adr_l x1, header_204
+    mov x2, header_204_len
     svc #0x80
 
     ; write to socket
     mov x16, SYS_write
     ldr_l x0, clientfd
-    adr_l x1, head_501
-    mov x2, head_501_len
+    adr_l x1, header_204
+    mov x2, header_204_len
     svc #0x80
 
     b loop_end
+
+reply_501:
+    adr_l x3, header_501
+    mov x4, header_501_len
+    b send_reply
 
 reply_400:
-    ; write to stdout
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, head_400
-    mov x2, head_400_len
-    svc #0x80
-
-    ; write to socket
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, head_400
-    mov x2, head_400_len
-    svc #0x80
-
-    b loop_end
+    adr_l x3, header_400
+    mov x4, header_400_len
+    b send_reply
 
 reply_404:
+    adr_l x3, header_404
+    mov x4, header_404_len
+    b send_reply
+
+send_reply:
     ; write to stdout
     mov x16, SYS_write
     mov x0, #1
-    adr_l x1, head_404
-    mov x2, head_404_len
+    mov x1, x3
+    mov x2, x4
+    svc #0x80
+
+    ; write to stdout
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, header_tail
+    mov x2, header_tail_len
+    svc #0x80
+
+    ; write to stdout
+    mov x16, SYS_write
+    ldr_l x0, clientfd
+    mov x1, x3
+    mov x2, x4
     svc #0x80
 
     ; write to socket
     mov x16, SYS_write
     ldr_l x0, clientfd
-    adr_l x1, head_404
-    mov x2, head_404_len
+    adr_l x1, header_tail
+    mov x2, header_tail_len
     svc #0x80
 
     b loop_end

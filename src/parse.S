@@ -4,8 +4,12 @@
 .global strcmp
 .align 4
 
+;; this is PATH_MAX
+.equ filename_buf_size, 4096
+
 .bss
-filename_buf: .skip 4096 ;; probably way too defensive, but can't hurt, eh?
+;; probably way too defensive, but can't hurt, eh?
+filename_buf: .skip filename_buf_size + 1
 
 .text
 ;; input
@@ -63,13 +67,23 @@ parse_path:
     adr_l x1, filename_buf
 
 2:
+    cmp x2, filename_buf_size ; bounds check
+    b.ge 4f
+
     ldrb w3, [x0, x2] ; load byte from header+index
+    cbz w3, 4f ; is it NULL? go to 4f if it is
+
     cmp w3, #' ' ; is it a space?
     b.eq 3f ; we're done once we reach a space
 
-    ;; ok, we're not done
-    strb w3, [x1, x2] ; copy bytee to filename_buf+index
+    cmp w3, #'\r'
+    b.eq 4f
 
+    cmp w3, #'\n'
+    b.eq 4f
+
+    ;; ok, we're not done
+    strb w3, [x1, x2] ; copy byte to filename_buf+index
     add x2, x2, #1 ; increment the index
     b 2b ; and loop
 

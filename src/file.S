@@ -6,7 +6,7 @@
 .align 4
 
 .bss
-file_buf: .skip FILE_SIZE_MAX ; 64KB max HTML file :/
+file_buf: .skip FILE_SIZE_MAX + 1; 64KB max HTML file :/, plus NULL byte
 
 .data
 html_ext: .asciz ".html"
@@ -61,6 +61,8 @@ read_file:
     ;; then jumps to ret.
     b.cs 2f
     mov x3, x0 ; save bytes read in x3
+
+    strb wzr, [x1, x3] ;; null-terminate file_buf
 
     ;; close(filedes)
     mov x16, SYS_close

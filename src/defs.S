@@ -39,6 +39,7 @@
 ;; request type ids
 .equ HEAD_REQ_ID, 0
 .equ GET_REQ_ID, 1
+.equ OPTIONS_REQ_ID, 2
 
 ;; File extension types
 .equ FILETYPE_ERR, 0

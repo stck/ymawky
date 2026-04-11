@@ -20,6 +20,10 @@ head_req:
     .ascii "HEAD "
 .equ head_req_len, . - head_req
 
+options_req:
+    .ascii "OPTIONS "
+.equ options_req_len, . - options_req
+
 .bss
 sockfd:             .skip 8
 
@@ -107,7 +111,16 @@ loop:
     cmp x0, #1
     b.eq 2f
 
-    ;; if it was neither, reply 501
+    ;; hm. maybe it was an OPTIONS request?
+    adr_l x0, buf
+    adr_l x1, options_req
+    mov x2, options_req_len
+    bl strcmp
+
+    cmp x0, #1
+    b.eq 3f
+
+    ;; if it was none, reply 501
     b reply_501
 
 1:
@@ -117,6 +130,10 @@ loop:
 2:
     mov x20, HEAD_REQ_ID
     b get
+
+3:
+    mov x20, OPTIONS_REQ_ID
+    b reply_204 ;; reply_* always return to loop_end
 
 loop_end:
     ;; close(clientfd)
