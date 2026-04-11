@@ -1,13 +1,8 @@
 #include "defs.S"
 
-.global read_file
 .global get_filetype
 .global check_path_safety
 .align 4
-
-.bss
-file_buf: .skip FILE_SIZE_MAX + 1; 64KB max HTML file :/, plus NULL byte
-.align 3 ; the + 1 causes alignment issues.
 
 .data
 html_ext: .asciz ".html"
@@ -32,64 +27,6 @@ unknown_ct: .ascii "text/plain"
 .equ unknown_ct_len, . - unknown_ct
 
 .text
-
-;; input
-;; x0 -> filename to open
-;;
-;; return
-;; x0 -> pointer to file content string
-;; x1 -> bytes read
-;;
-;; clobbers x0-2, x3, x4
-read_file:
-    ;; open(filename, O_RDONLY);
-    mov x16, SYS_open
-    ;; x0 should already be index.html
-    mov x1, #0
-    svc #0x80
-    ;; did open return -1? just ret immediately
-    ;; apparently the carry flag will be set instead of x0 being -1
-    b.cs 1f
-    mov x4, x0 ; save filedes in x4
-
-    ;; read(filedes, file_buf, FILE_SIZE_MAX)
-    mov x16, SYS_read
-    ; x0 should be filedes still from open() returning it
-    adr_l x1, file_buf
-    mov x2, FILE_SIZE_MAX
-    svc #0x80
-    ;; did read set the carry flag, indicating an error?
-    ;; we gotta close the file first, so jump to 2f, which closes the file
-    ;; then jumps to ret.
-    b.cs 2f
-    mov x3, x0 ; save bytes read in x3
-
-    strb wzr, [x1, x3] ;; null-terminate file_buf
-
-    ;; close(filedes)
-    mov x16, SYS_close
-    mov x0, x4
-    svc #0x80
-
-    adr_l x0, file_buf ; x0 -> pointer to file contents
-    mov x1, x3 ; x3 -> number of bytes read
-
-1:
-    ret
-
-2:
-    ;; If we got here, it's because read set the carry flag. We don't want
-    ;; close to overwrite it, so let's stash it first
-    mrs x5, NZCV
-
-    ;; close(filedes)
-    mov x16, SYS_close
-    mov x0, x4
-    svc #0x80
-
-    ;; now re restore the carry flag set from read()
-    msr NZCV, x5
-    b 1b
 
 ;; input
 ;; x0 -> filename string

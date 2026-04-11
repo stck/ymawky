@@ -16,9 +16,9 @@ head_content_type:
     .ascii "\r\nContent-Type: "
 .equ head_content_type_len, . - head_content_type
 
-line_breaks:
+good_response_tail:
     .ascii "\r\nAllow: GET, HEAD\r\nServer: ymawky\r\n\r\n"
-.equ line_breaks_len, . - line_breaks
+.equ good_response_tail_len, . - good_response_tail
 
 header_400:
     .ascii "HTTP/1.1 400 Bad Request"
@@ -72,20 +72,13 @@ get:
     bl check_path_safety
     cbz x0, reply_400
 
-    ;; we gotta try to read the file before sending the header. if read_file
-    ;; fails, we gotta 404
     ldr_l x0, filename_str
-    ;bl get_file_length
-    ;bl read_file
-    ;; if the read_file failed, file doesn't exist. so we reply 404.
-    ;; reply_404 jumps back to the end of the loop, where we close the
-    ;; connection and open a new one
 
     mov x16, SYS_open
     ; x0 should already be set
     mov x1, #0 ; RDONLY
     svc #0x80
-    b.cs reply_404 ; if the carry flag is set, 404
+    b.cs reply_404 ; if the carry flag is set, read failed so 404
 
     ;; save the file descriptor
     str_l x0, file_des
@@ -163,8 +156,8 @@ get:
     ;; Write the \r\n\r\n
     mov x16, SYS_write
     ldr_l x0, clientfd
-    adr_l x1, line_breaks
-    mov x2, line_breaks_len
+    adr_l x1, good_response_tail
+    mov x2, good_response_tail_len
     svc #0x80
 
     ;; x20 is the request type, currently GET or HEAD.
