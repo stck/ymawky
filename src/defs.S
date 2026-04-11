@@ -31,6 +31,9 @@
 .equ SYS_setsockopt, 105
 .equ SYS_listen, 106
 .equ SYS_shutdown, 134
+.equ SYS_lseek, 199
+.equ SYS_mmap, 197
+.equ SYS_munmap, 73
 
 ;; constants
 .equ BUF_SIZE, 16384

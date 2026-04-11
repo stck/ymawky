@@ -36,6 +36,7 @@ _main:
     mov x1, #1 ; SOCK_STREAM
     mov x2, #0 ; nothin, TCP
     svc #0x80
+    b.cs fatal_exit
 
     str_l x0, sockfd
 
@@ -47,6 +48,7 @@ _main:
     adr_l x3, one
     mov x4, #4 ; sizeof int
     svc #0x80
+    b.cs exit
 
     ;; bind(sockfd, &addr, 16)
     mov x16, SYS_bind
@@ -54,12 +56,14 @@ _main:
     adr_l x1, addr
     mov x2, #16 ; the struct is 16 bytes
     svc #0x80
+    b.cs exit
 
     ;; listen(sockfd, 5)
     mov x16, SYS_listen
     ldr_l x0, sockfd
     mov x1, #5
     svc #0x80
+    b.cs exit
 
 loop:
     ;; accept(sockfd, NULL, NULL)
@@ -68,6 +72,7 @@ loop:
     mov x1, #0
     mov x2, #0
     svc #0x80
+    b.cs loop ;; loop if accept() failed.
 
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
@@ -79,8 +84,9 @@ loop:
     mov x2, BUF_SIZE
     svc #0x80
 
-    ;; If nothing is read, quit!
-    cbz x0, exit
+    ;; If nothing is read, or if read fails, try again :)
+    b.cs loop_end
+    cbz x0, loop_end
 
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
@@ -155,6 +161,7 @@ exit:
     ldr_l x0, sockfd
     svc #0x80
 
+fatal_exit:
     ;; exit(1)
     mov x16, SYS_exit
     mov x0, #1
