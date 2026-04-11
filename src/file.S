@@ -14,16 +14,16 @@ js_ext: .asciz ".js"
 css_ext: .asciz ".css"
 .equ css_ext_len, . - css_ext
 
-html_ct: .ascii "text/html"
+html_ct: .ascii "text/html; charset=utf-8"
 .equ html_ct_len, . - html_ct
 
-css_ct: .ascii "text/css"
+css_ct: .ascii "text/css; charset=utf-8"
 .equ css_ct_len, . - css_ct
 
-js_ct: .ascii "text/javascript"
+js_ct: .ascii "text/javascript; charset=utf-8"
 .equ js_ct_len, . - js_ct
 
-unknown_ct: .ascii "text/plain"
+unknown_ct: .ascii "text/plain; charset=utf-8"
 .equ unknown_ct_len, . - unknown_ct
 
 .text

@@ -11,6 +11,9 @@
 www_prefix: .ascii "www/"
 .equ www_prefix_len, . - www_prefix
 
+default_file: .ascii "index.html"
+.equ default_file_len, . - default_file
+
 .bss
 ;; probably way too defensive, but can't hurt, eh?
 filename_buf: .skip filename_buf_size + 1
@@ -112,9 +115,36 @@ parse_path:
     b 2b ; and loop
 
 3:
+    ;; is the length the same as the www/ prefix? if it is, we didn't actually
+    ;; get a file.
+    mov x5, www_prefix_len
+    cmp x4, x5
+    b.eq _empty_filename
+
     strb wzr, [x1, x4] ;; null-terminate filename_buf
     mov x0, x1 ; we want x0 to point to the filename string
     mov x1, x4 ; x1 is the length of the filename
+    b 5f
+
+_empty_filename:
+    mov x5, x1 ; save filename_buf in x5
+
+    adr_l x0, filename_buf
+    ;; skip past the www/
+    mov x2, www_prefix_len
+    add x0, x0, x2
+
+    adr_l x1, default_file
+    mov x2, default_file_len
+    bl memcpy
+
+    strb wzr, [x0] ;; null terminate
+    mov x0, x5
+
+    mov x1, www_prefix_len
+    mov x2, default_file_len
+    add x1, x1, x2
+
     b 5f
 
 ;; no match was when we were parsing the header for request type. since we cant
