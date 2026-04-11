@@ -2,6 +2,7 @@
 
 .global read_file
 .global get_filetype
+.global check_path_safety
 .align 4
 
 .bss
@@ -55,8 +56,9 @@ read_file:
     adr_l x1, file_buf
     mov x2, FILE_SIZE_MAX
     svc #0x80
-    ;; did read return -1? we gotta close the file first, so jump to 2f,
-    ;; which closes the file then jumps to ret.
+    ;; did read set the carry flag, indicating an error?
+    ;; we gotta close the file first, so jump to 2f, which closes the file
+    ;; then jumps to ret.
     b.cs 2f
     mov x3, x0 ; save bytes read in x3
 
@@ -72,11 +74,58 @@ read_file:
     ret
 
 2:
+    ;; If we got here, it's because read set the carry flag. We don't want
+    ;; close to overwrite it, so let's stash it first
+    mrs x5, NZCV
+
     ;; close(filedes)
     mov x16, SYS_close
     mov x0, x4
     svc #0x80
+
+    ;; now re restore the carry flag set from read()
+    msr NZCV, x5
     b 1b
+
+;; input
+;; x0 -> filename string
+;; x1 -> filename length
+;;
+;; returns
+;; x0 -> 1 if safe, 0 if unsafe
+check_path_safety:
+    mov x2, #0
+
+1:
+    ;; if we're at the end of the string and there's no match yet, finish up
+    cmp x2, x1
+    b.ge _safe_path
+
+    ldrb w3, [x0]
+    ldrb w4, [x0, #1]
+
+    ;; check if x0 and x0+1 are both .
+    cmp w3, #'.'
+    b.ne _loop_again
+
+    cmp w4, #'.'
+    b.ne _loop_again
+
+    ;; if we got here, both bytes were '.'
+    b _unsafe_path
+
+_loop_again:
+    add x2, x2, #1
+    add x0, x0, #1
+    b 1b
+
+_unsafe_path:
+    mov x0, #0
+    ret
+
+_safe_path:
+    mov x0, #1
+    ret
 
 ;; input
 ;; x0 -> filename
@@ -124,7 +173,7 @@ _found_extension:
     cbnz x0, _return_css
 
     ;; nope. how about .js?
-    mov x0, x1
+    mov x0, x5
     adr_l x1, js_ext
     mov x2, js_ext_len
     bl strcmp

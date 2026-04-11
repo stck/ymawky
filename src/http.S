@@ -54,6 +54,10 @@ get:
     str_l x0, filename_str
     str_l x1, filename_len
 
+    ;; if the path contains .., it's probably unsafe. so reject it.
+    bl check_path_safety
+    cbz x0, reply_400
+
     ;; we gotta try to read the file before sending the header. if read_file
     ;; fails, we gotta 404
     ldr_l x0, filename_str
