@@ -24,6 +24,10 @@ header_400:
     .ascii "HTTP/1.1 400 Bad Request"
 .equ header_400_len, . - header_400
 
+header_500:
+    .ascii "HTTP/1.1 500 Internal Server Error"
+.equ header_500_len, . - header_500
+
 header_501:
     .ascii "HTTP/1.1 501 Not Implemented"
 .equ header_501_len, . - header_501
@@ -41,6 +45,7 @@ header_tail:
 .equ header_tail_len, . - header_tail
 
 .bss
+file_des:           .skip 8
 filename_str:       .skip 8
 filename_len:       .skip 8
 file_contents:      .skip 8
@@ -70,14 +75,47 @@ get:
     ;; we gotta try to read the file before sending the header. if read_file
     ;; fails, we gotta 404
     ldr_l x0, filename_str
-    bl read_file
+    ;bl get_file_length
+    ;bl read_file
     ;; if the read_file failed, file doesn't exist. so we reply 404.
     ;; reply_404 jumps back to the end of the loop, where we close the
     ;; connection and open a new one
-    b.cs reply_404
 
-    str_l x0, file_contents ; pointer to file contents as a string
-    str_l x1, file_length   ; bytes read from file, size (under 65536)
+    mov x16, SYS_open
+    ; x0 should already be set
+    mov x1, #0 ; RDONLY
+    svc #0x80
+    b.cs reply_404 ; if the carry flag is set, 404
+
+    ;; save the file descriptor
+    str_l x0, file_des
+
+    mov x16, SYS_lseek
+    ; x0 should now be the file descriptor
+    mov x1, #0 ; offset
+    mov x2, #2 ; SEEK_END
+    svc #0x80
+    b.cs 9f
+
+    ;; now x0 should be file length, let's store it in x21
+    ;str_l x0, file_length
+    mov x21, x0
+
+    ;;; XXX XXX XXX
+    ;; TODO TODO TODO
+    ;;; flow will be:
+    ;;; 1 open
+    ;;; 2 store file descriptor somewhere
+    ;;; 3 lseek -> get size
+    ;;; 4 write headers with content length
+    ;;; 5 if HEAD req, skip to 9
+    ;;; 6 mmap file
+    ;;; 7 write body
+    ;;; 8 munmap
+    ;;; 9 close file
+
+    ;;str_l x0, file_contents ; pointer to file contents as a string
+    ;str_l x1, file_length   ; bytes read from file, size (under 65536)
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write
@@ -88,8 +126,10 @@ get:
 
     ;; we gotta print the file length in the header as Content-Length
     ;; so lets convert it to a string!
-    ldr_l x0, file_length
+    ;ldr_l x0, file_length
+    mov x0, x21
     bl itoa
+
     str_l x0, content_length_str ; pointer to start of string
     str_l x1, content_length_len ; length of string
 
@@ -107,7 +147,6 @@ get:
     mov x2, head_content_type_len
     svc #0x80
 
-    ;;; XXX
     ;; Get content type
     ldr_l x0, filename_str
     ldr_l x1, filename_len
@@ -135,10 +174,62 @@ get:
     b.eq 1f
 
     ;; Write the contents of the requested file
+    ;;mov x16, SYS_write
+    ;;ldr_l x0, clientfd
+    ;;ldr_l x1, file_contents
+    ;;ldr_l x2, file_length
+    ;;svc #0x80
+
+    ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
+    mov x16, SYS_mmap
+    mov x0, #0
+    ;ldr_l x1, file_length
+    mov x1, x21
+    mov x2, #1 ; PROT_READ
+    mov x3, #2 ; MAP_PRIVATE
+    ldr_l x4, file_des ; file descriptor
+    mov x5, #0 ; offset
+    svc #0x80
+    b.cs 9f
+    ;; x0 is now the pointer to memory for the file
+
+    ;; stash the pointer somewhere safe
+    mov x12, x0
+
+    ;; x12 -> pointer to mmap'd memory
+    ;; x21 -> total length of file
+    mov x10, x12  ; current position
+    mov x11, x21 ; remaining bytes
+_write_loop:
+    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
+    ;; loop.
+    cbz x11, _write_done
+
+    ;; write(clientfd, mmap_ptr, size)
     mov x16, SYS_write
     ldr_l x0, clientfd
-    ldr_l x1, file_contents
-    ldr_l x2, file_length
+    mov x1, x10
+    mov x2, x11
+    svc #0x80
+    b.cs 9f ;; uh oh something went wrong, we gotta mmunmap the file
+            ;; and stuff now.
+
+    ; x0 -> bytes written
+    add x10, x10, x0 ; advance the pointer by x0 bytes
+    sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
+    b _write_loop
+
+_write_done:
+    mov x16, SYS_munmap
+    mov x0, x12
+    mov x1, x21
+    svc #0x80
+    b.cs 9f
+
+;; close the file
+9:
+    mov x16, SYS_close
+    ldr_l x0, file_des
     svc #0x80
 
 1:
@@ -160,6 +251,11 @@ reply_204:
     svc #0x80
 
     b loop_end
+
+reply_500:
+    adr_l x3, header_500
+    mov x4, header_500_len
+    b send_reply
 
 reply_501:
     adr_l x3, header_501

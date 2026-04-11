@@ -7,6 +7,7 @@
 
 .bss
 file_buf: .skip FILE_SIZE_MAX + 1; 64KB max HTML file :/, plus NULL byte
+.align 3 ; the + 1 causes alignment issues.
 
 .data
 html_ext: .asciz ".html"
@@ -31,6 +32,7 @@ unknown_ct: .ascii "text/plain"
 .equ unknown_ct_len, . - unknown_ct
 
 .text
+
 ;; input
 ;; x0 -> filename to open
 ;;

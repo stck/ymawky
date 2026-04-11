@@ -10,6 +10,7 @@
 .bss
 ;; probably way too defensive, but can't hurt, eh?
 filename_buf: .skip filename_buf_size + 1
+.align 3 ;; fix broken alignment again
 
 .text
 ;; input

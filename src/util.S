@@ -6,6 +6,7 @@
 
 .bss
 itoa_buf: .skip 20
+.align 3
 
 .text
 ;; input
