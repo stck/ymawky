@@ -55,3 +55,19 @@ memcpy:
 
 1:
     ret
+
+;; input
+;; x1 -> string whose length to check
+;;
+;; return
+;; x0 -> length of string
+strlen:
+    mov x0, #0
+1:
+    ldrb w3, [x1, x0]
+    cbz w3, 2f
+    add x0, x0, #1
+    b 1b
+
+2:
+    ret

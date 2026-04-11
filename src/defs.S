@@ -43,10 +43,3 @@
 .equ HEAD_REQ_ID, 0
 .equ GET_REQ_ID, 1
 .equ OPTIONS_REQ_ID, 2
-
-;; File extension types
-.equ FILETYPE_ERR, 0
-.equ FILETYPE_HTML, 1
-.equ FILETYPE_CSS, 2
-.equ FILETYPE_JS, 3
-.equ FILETYPE_UNKNOWN, 4

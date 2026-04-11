@@ -172,6 +172,8 @@ strcmp:
     cmp w3, w4
     b.ne _no_match
 
+    cbz w3, _match ;; both equal and both NULL = end of string = match
+
     ;; if we've reached the end, it's a match yeah?
     subs x2, x2, #1
     b.eq _match

@@ -5,29 +5,89 @@
 .align 4
 
 .data
-html_ext: .asciz ".html"
-.equ html_ext_len, . - html_ext
+file_types:
+    .asciz ".html"
+    .skip 2
+    .asciz "text/html; charset=utf-8"
+    .skip 7
 
-js_ext: .asciz ".js"
-.equ js_ext_len, . - js_ext
+    .asciz ".css"
+    .skip 3
+    .asciz "text/css; charset=utf-8"
+    .skip 8
 
-css_ext: .asciz ".css"
-.equ css_ext_len, . - css_ext
+    .asciz ".js"
+    .skip 4
+    .asciz "text/javascript; charset=utf-8"
+    .skip 1
 
-html_ct: .ascii "text/html; charset=utf-8"
-.equ html_ct_len, . - html_ct
+    .asciz ".json"
+    .skip 2
+    .asciz "application/json"
+    .skip 15
 
-css_ct: .ascii "text/css; charset=utf-8"
-.equ css_ct_len, . - css_ct
+    .asciz ".png"
+    .skip 3
+    .asciz "image/png"
+    .skip 22
 
-js_ct: .ascii "text/javascript; charset=utf-8"
-.equ js_ct_len, . - js_ct
+    .asciz ".jpg"
+    .skip 3
+    .asciz "image/jpeg"
+    .skip 21
+
+    .asciz ".jpeg"
+    .skip 2
+    .asciz "image/jpeg"
+    .skip 21
+
+    .asciz ".gif"
+    .skip 3
+    .asciz "image/gif"
+    .skip 22
+
+    .asciz ".svg"
+    .skip 3
+    .asciz "image/svg+xml"
+    .skip 18
+
+    .asciz ".ico"
+    .skip 3
+    .asciz "image/x-icon"
+    .skip 19
+
+    .asciz ".webp"
+    .skip 2
+    .asciz "image/webp"
+    .skip 21
+
+    .asciz ".txt"
+    .skip 3
+    .asciz "text/plain; charset=utf-8"
+    .skip 6
+
+    .asciz ".pdf"
+    .skip 3
+    .asciz "application/pdf"
+    .skip 16
+
+    .asciz ".woff2"
+    .skip 1
+    .asciz "font/woff2"
+    .skip 21
+
+    .asciz ".xml"
+    .skip 3
+    .asciz "text/xml; charset=utf-8"
+    .skip 8
+
+    ;; sentinel: empty extension = end of table
+    .byte 0
 
 unknown_ct: .ascii "text/plain; charset=utf-8"
 .equ unknown_ct_len, . - unknown_ct
 
 .text
-
 ;; input
 ;; x0 -> filename string
 ;; x1 -> filename length
@@ -103,7 +163,6 @@ _unsafe_path:
 ;; returns
 ;; x0 -> content-type string (eg text/html)
 ;; x1 -> length of content-type string
-;; x2 -> filetype const from defs.S, eg, FILETYPE_HTML (1).
 get_filetype:
     ;; push the link register to the stack sorta. since we bl strcmp, we need
     ;; to preserve it
@@ -126,56 +185,40 @@ get_filetype:
 ;; Ok, now x0 is pointing at the '.' in the filename
 _found_extension:
     mov x5, x0 ;; save this position
+    mov x6, x1
+
+    adr_l x1, file_types
 
 1:
-    ;; is it .html?
-    adr_l x1, html_ext
-    mov x2, html_ext_len
+    ldrb w3, [x1]
+    cmp w3, #0
+    b.eq _return_unknown
+
+    mov x7, x1 ;; save table pointer
+    mov x0, x5 ;; filename, from . and on
+    mov x2, #8
     bl strcmp
-    cbnz x0, _return_html
 
-    ;; nope. how about .css?
-    mov x0, x5
-    adr_l x1, css_ext
-    mov x2, css_ext_len
-    bl strcmp
-    cbnz x0, _return_css
+    cmp x0, #1
+    b.eq _match
 
-    ;; nope. how about .js?
-    mov x0, x5
-    adr_l x1, js_ext
-    mov x2, js_ext_len
-    bl strcmp
-    cbnz x0, _return_js
+    add x1, x7, #40
+    b 1b
 
-    ;; none of em. unknown file extension
-    b _return_unknown
-
-
-_return_html:
-    adr_l x0, html_ct
-    mov x1, html_ct_len
-    mov x2, FILETYPE_HTML
+_match:
+    add x6, x7, #8
+    mov x1, x6 ;; strlen takes x1
+    bl strlen  ;; x0 is now length
+    mov x1, x0 ;; we want to return length in x1
+    mov x0, x6
     b _return
 
-_return_css:
-    adr_l x0, css_ct
-    mov x1, css_ct_len
-    mov x2, FILETYPE_CSS
-    b _return
-
-_return_js:
-    adr_l x0, js_ct
-    mov x1, js_ct_len
-    mov x2, FILETYPE_JS
-    b _return
 
 _return_unknown:
     adr_l x0, unknown_ct
     mov x1, unknown_ct_len
-    mov x2, FILETYPE_UNKNOWN
     b _return
-
+ 
 _return:
     ;; restore the link register we pushed to the stack
     ldp x29, x30, [sp], #16
