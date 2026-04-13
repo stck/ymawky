@@ -30,6 +30,26 @@ sockfd:             .skip 8
 
 .text
 _main:
+    ;; did we get a 
+    cmp x0, #1
+    b.le _skip_argv
+
+    ;; get argv0.
+    ldr x0, [x1, #8]
+    bl atoi
+    b.cs fatal_exit
+
+    ;; now x0 contains the integer representation of argv[1]
+    mov x2, #65535
+    cmp x0, x2
+    b.gt fatal_exit
+
+    ;; overwrite the address struct's port with the custom port.
+    rev16 w0, w0 ; make x0 big-endian, which the port needs to be
+    adr_l x1, addr
+    strh w0, [x1, #2]
+
+_skip_argv:
     ;; socket(AF_INET, SOCK_STREAM, 0)
     mov x16, SYS_socket
     mov x0, #2 ; AF_INET

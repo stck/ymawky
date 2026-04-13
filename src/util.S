@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global itoa
+.global atoi
 .global strlen
 .global memcpy
 
@@ -12,7 +13,7 @@ itoa_buf: .skip 20
 
 .text
 ;; input
-;; xq0 -> number to convert
+;; x0 -> number to convert
 ;;
 ;; returns
 ;; x0 -> pointer to start of string
@@ -36,6 +37,40 @@ itoa:
 
     mov x0, x1 ; x0 = pointer to start
     mov x1, x2 ; x1 = length
+    ret
+
+;; input
+;; x0 -> pointer to string
+;;
+;; returns
+;; x0 -> integer representation of string
+atoi:
+    mov x1, #0
+    mov x3, #10
+1:
+    ldrb w2, [x0]
+    cbz w2, 2f
+
+    ; make sure we actually have a number
+    cmp w2, #'0'
+    b.lo _error
+    cmp w2, #'9'
+    b.hi _error
+
+    mul x1, x1, x3
+    sub w2, w2, #'0'
+    add x1, x1, x2
+    add x0, x0, #1
+    b 1b
+2:
+    mov x0, x1
+    ret
+
+_error:
+    mrs x4, NZCV
+    orr x4, x4, #0x20000000 ; set carry bit
+    msr NZCV, x4
+    mov x0, #0
     ret
 
 ;; input
