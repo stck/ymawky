@@ -281,7 +281,7 @@ _encoded_char:
     b _decode_loop
 
 _hex_to_val:
-    orr w4, w4, #0x30
+    orr w4, w4, #0x20
     cmp w4, #'9'
     b.le 1f
 
