@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global get_filetype
+.global check_path_traversal
 .global check_path_safety
 .global decode_url
 .align 4
@@ -100,7 +101,7 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 ;; x2 -> index into string
 ;; x3 -> dot count per segment
 ;; x4 -> segment length
-check_path_safety:
+check_path_traversal:
     mov x2, #0
     mov x3, #0
     mov x4, #0
@@ -154,6 +155,42 @@ _safe_path:
     ret
 
 _unsafe_path:
+    mov x0, #0
+    ret
+
+;; input
+;; x0 -> path to check
+;; x1 -> path length
+;;
+;; returns
+;; x0 -> 1 if safe, 0 if unsafe
+check_path_safety:
+    ;sub x1, x1, #1 ; x1 is the length including the NULL byte. let's get
+                   ; rid of that
+1:
+    ;; if we've reached the end and no issues yet, it's safe
+    cbz x1, _safe
+
+    ldrb w3, [x0]
+
+    ;; everything under and including 0x1F, "US" or Unit Separator.
+    cmp w3, #0x1F
+    b.le _unsafe_path
+
+    ;; everything including and after 0x7F, which is DELETE. everything after
+    ;; that is not valid ascii anymore.
+    cmp w3, #0x7F
+    b.ge _unsafe_path
+
+    sub x1, x1, #1
+    add x0, x0, #1
+    b 1b
+
+_safe:
+    mov x0, #1
+    ret
+
+_unsafe:
     mov x0, #0
     ret
 
@@ -233,6 +270,7 @@ _return:
 ;; x0 -> decoded string (decoded in-place)
 ;; x1 -> length of decoded string
 decode_url:
+    stp x29, x30, [sp, #-16]!
     mov x2, x0 ; write pointer
     mov x3, #0 ;; x3 is length of new string
 
@@ -257,7 +295,9 @@ _decode_loop:
     b _decode_loop
 
 _encoded_char:
-    stp x29, x30, [sp, #-16]!
+    cmp x1, #3
+    b.lt _bad_end
+
     ;; high nibble
     ldrb w4, [x0, #1]
     bl _hex_to_val
@@ -268,10 +308,12 @@ _encoded_char:
     bl _hex_to_val
     orr w4, w5, w4 ; combine w5 (high nibble) with w4 (low nibble)
 
+    cmp w4, #0
+    b.le _bad_end
+
     ;; now w4 contains the decoded byte
     strb w4, [x2, x3]
 
-    ldp x29, x30, [sp], #16
     sub x1, x1, #3
     cmp x1, #0
     b.le _decode_end
@@ -282,8 +324,16 @@ _encoded_char:
 
 _hex_to_val:
     orr w4, w4, #0x20
+
+    cmp w4, #'0'
+    b.lt _bad_end
     cmp w4, #'9'
     b.le 1f
+
+    cmp w4, #'a'
+    b.lt _bad_end
+    cmp w4, #'f'
+    b.gt _bad_end
 
     sub w4, w4, #'a' - 10
     ret
@@ -292,8 +342,15 @@ _hex_to_val:
     ret
 
 _decode_end:
+    ldp x29, x30, [sp], #16
     mov x0, x2
     mov x1, x3
 
     strb wzr, [x0, x1] ;; null terminate decoded string
+    ret
+
+_bad_end:
+    ldp x29, x30, [sp], #16
+    mov x0, #0
+    mov x1, #0
     ret

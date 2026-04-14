@@ -59,28 +59,26 @@ get:
     ;; parse GET /..., extract the filename we're GETting.
     adr_l x0, buf
     bl parse_path
-    ;brk #2
-brk1:
     cmp x0, #0 ; did parse_path return null? if so we gotta send a 400
     b.eq reply_400
-    ;brk #3
 
-brk2:
     ;; x0 is already path, x1 is already path length
     bl decode_url
-    ;brk #4
+    cmp x0, #0
+    b.eq reply_400
 
-brk3:
     ;; store the decoded filename from parse_path into filename_str
     ;; and the length into x1
     str_l x0, filename_str
     str_l x1, filename_len
-    ;brk #5
-brk4:
-    ;; if the path contains .., it's probably unsafe. so reject it.
+
+    ;; check for legal/illegal data in the path
     bl check_path_safety
     cbz x0, reply_400
-    ;brk #6
+
+    ;; if the path contains .., it's probably unsafe. so reject it.
+    bl check_path_traversal
+    cbz x0, reply_400
 
     ldr_l x0, filename_str
 
@@ -103,22 +101,6 @@ brk4:
     ;; now x0 should be file length, let's store it in x21
     ;str_l x0, file_length
     mov x21, x0
-
-    ;;; XXX XXX XXX
-    ;; TODO TODO TODO
-    ;;; flow will be:
-    ;;; 1 open
-    ;;; 2 store file descriptor somewhere
-    ;;; 3 lseek -> get size
-    ;;; 4 write headers with content length
-    ;;; 5 if HEAD req, skip to 9
-    ;;; 6 mmap file
-    ;;; 7 write body
-    ;;; 8 munmap
-    ;;; 9 close file
-
-    ;;str_l x0, file_contents ; pointer to file contents as a string
-    ;str_l x1, file_length   ; bytes read from file, size (under 65536)
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write

@@ -100,11 +100,16 @@ loop:
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
-    ;brk #1
     ;; if it fails, we just want to close clientfd and loop anyway, so there's
     ;; no particular error handling/b.cs here.
 
     ;; if we're in the child, go there
+    ;; NOTE
+    ;; on macos, fork() returns the pid of the child process in x0 in the
+    ;; parent process. in the child process, it puts 1 in x1. on linux, fork
+    ;; will put 0 in x0 in the child, or the pid in x0 in the parent. so it's
+    ;; a bit different. if you're on linux, you've got to change this to
+    ;; cmp x0, #0
     cmp x1, #1
     b.eq _child
 
@@ -116,7 +121,6 @@ loop:
     b loop
 
 _child:
-;    ;brk #0
     ;; close sockfd
     mov x16, SYS_close
     ldr_l x0, sockfd
@@ -129,7 +133,6 @@ _child:
     mov x2, BUF_SIZE
     svc #0x80
 
-    ;brk #9
     ;; If nothing is read, or if read fails, try again :)
     b.cs loop_end
     cbz x0, loop_end
