@@ -2,6 +2,7 @@
 
 .global get_filetype
 .global check_path_safety
+.global decode_url
 .align 4
 
 .data
@@ -222,4 +223,77 @@ _return_unknown:
 _return:
     ;; restore the link register we pushed to the stack
     ldp x29, x30, [sp], #16
+    ret
+
+;; input
+;; x0 -> encoded string
+;; x1 -> length of encoded string
+;;
+;; returns
+;; x0 -> decoded string (decoded in-place)
+;; x1 -> length of decoded string
+decode_url:
+    mov x2, x0 ; write pointer
+    mov x3, #0 ;; x3 is length of new string
+
+_decode_loop:
+    ldrb w4, [x0]
+    ;; make sure we're not null
+    cmp w4, #0
+    b.eq _decode_end
+
+    cmp w4, #'%'
+    b.eq _encoded_char
+
+    strb w4, [x2, x3]
+    add x3, x3, #1
+
+    ;; make sure we're not reading beyond the length of the string
+    sub x1, x1, #1
+    cmp x1, #0
+    b.eq _decode_end
+
+    add x0, x0, #1 ; increment along the new string to the next char
+    b _decode_loop
+
+_encoded_char:
+    stp x29, x30, [sp, #-16]!
+    ;; high nibble
+    ldrb w4, [x0, #1]
+    bl _hex_to_val
+    lsl w5, w4, #4 ; stash in w5
+
+    ;; low nibble
+    ldrb w4, [x0, #2]
+    bl _hex_to_val
+    orr w4, w5, w4 ; combine w5 (high nibble) with w4 (low nibble)
+
+    ;; now w4 contains the decoded byte
+    strb w4, [x2, x3]
+
+    ldp x29, x30, [sp], #16
+    sub x1, x1, #3
+    cmp x1, #0
+    b.le _decode_end
+
+    add x3, x3, #1
+    add x0, x0, #3
+    b _decode_loop
+
+_hex_to_val:
+    orr w4, w4, #0x30
+    cmp w4, #'9'
+    b.le 1f
+
+    sub w4, w4, #'a' - 10
+    ret
+1:
+    sub w4, w4, #'0'
+    ret
+
+_decode_end:
+    mov x0, x2
+    mov x1, x3
+
+    strb wzr, [x0, x1] ;; null terminate decoded string
     ret

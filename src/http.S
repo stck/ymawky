@@ -59,18 +59,28 @@ get:
     ;; parse GET /..., extract the filename we're GETting.
     adr_l x0, buf
     bl parse_path
-
+    ;brk #2
+brk1:
     cmp x0, #0 ; did parse_path return null? if so we gotta send a 400
     b.eq reply_400
+    ;brk #3
 
-    ;; store the filename from parse_path into filename_str
+brk2:
+    ;; x0 is already path, x1 is already path length
+    bl decode_url
+    ;brk #4
+
+brk3:
+    ;; store the decoded filename from parse_path into filename_str
     ;; and the length into x1
     str_l x0, filename_str
     str_l x1, filename_len
-
+    ;brk #5
+brk4:
     ;; if the path contains .., it's probably unsafe. so reject it.
     bl check_path_safety
     cbz x0, reply_400
+    ;brk #6
 
     ldr_l x0, filename_str
 

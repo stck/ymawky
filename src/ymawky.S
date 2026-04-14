@@ -100,6 +100,7 @@ loop:
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
+    ;brk #1
     ;; if it fails, we just want to close clientfd and loop anyway, so there's
     ;; no particular error handling/b.cs here.
 
@@ -115,6 +116,7 @@ loop:
     b loop
 
 _child:
+;    ;brk #0
     ;; close sockfd
     mov x16, SYS_close
     ldr_l x0, sockfd
@@ -127,6 +129,7 @@ _child:
     mov x2, BUF_SIZE
     svc #0x80
 
+    ;brk #9
     ;; If nothing is read, or if read fails, try again :)
     b.cs loop_end
     cbz x0, loop_end
@@ -174,6 +177,7 @@ _child:
 
 1:
     mov x20, GET_REQ_ID
+    ;brk #0
     b get
 
 2:
