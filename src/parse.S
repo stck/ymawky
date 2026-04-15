@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global parse_path
+.global parse_header_end
 .global strcmp
 .align 4
 
@@ -8,6 +9,9 @@
 .equ filename_buf_size, 4096
 
 .data
+header_end: .ascii "\r\n\r\n"
+.equ header_end_len, . - header_end
+
 www_prefix: .ascii "www/"
 .equ www_prefix_len, . - www_prefix
 
@@ -40,7 +44,6 @@ parse_path:
     ldrb w3, [x0]
     cmp w3, #'/'
     b.eq 1f
-    ;b.eq 1f
 
     ;; if we haven't reached a / in the first 16 bytes, we'll fail
     cmp x1, #16
@@ -158,6 +161,53 @@ _empty_filename:
     ;; restore the link register and ret
     ldp x29, x30, [sp], #16
     ret
+
+;; input
+;; x0 -> string
+;; x1 -> length
+parse_header_end:
+    adr_l x2, header_end
+    mov x5, #0
+    mov x6, #0
+1:
+    cmp x5, x1
+    b.ge no_end_found
+
+    ldrb w3, [x0, x5]
+    ldrb w4, [x2, x6]
+
+    cmp w3, w4
+    b.eq correct_char
+
+    b incorrect_char
+
+correct_char:
+    add x6, x6, #1
+
+    ;cmp x6, header_end_len
+    cmp x6, #3 ; length of \r\n\r\n
+    b.ge end_found
+
+    add x5, x5, #1
+    b 1b
+
+incorrect_char:
+    mov x6, #0
+    cmp w3, #'\r' ; this \r starts a new potential match, eg, \r\n\r>\r<\n\r\n
+    b.ne 2f
+    mov x6, #1
+2:
+    add x5, x5, #1
+    b 1b
+
+end_found:
+    add x1, x5, #1
+    ret
+
+no_end_found:
+    mov x1, #0
+    ret
+
 
 ;; input
 ;; x0 -> str1

@@ -38,7 +38,7 @@
 .equ SYS_lseek,      199
 
 ;; constants
-.equ BUF_SIZE,       16384
+.equ BUF_SIZE,       16384 ; number of bytes for read()
 
 ;; request type ids
 .equ HEAD_REQ_ID,    0

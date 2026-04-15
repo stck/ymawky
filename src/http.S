@@ -5,6 +5,8 @@
 .global reply_400
 .global reply_404
 .global reply_501
+.global reply_500
+.global reply_431
 .align 4
 
 ;; my god there has got to be a better way to handle this
@@ -24,6 +26,10 @@ good_response_tail:
 header_400:
     .ascii "HTTP/1.1 400 Bad Request"
 .equ header_400_len, . - header_400
+
+header_431:
+    .ascii "HTTP/1.1 431 Request Header Fields Too Large"
+.equ header_431_len, . - header_431
 
 header_500:
     .ascii "HTTP/1.1 500 Internal Server Error"
@@ -223,7 +229,7 @@ _write_done:
     svc #0x80
 
 1:
-    b loop_end
+    b child_end
 
 reply_204:
     ; write to stdout for logging and stuff
@@ -240,7 +246,7 @@ reply_204:
     mov x2, header_204_len
     svc #0x80
 
-    b loop_end
+    b child_end
 
 reply_500:
     adr_l x3, header_500
@@ -260,6 +266,11 @@ reply_400:
 reply_404:
     adr_l x3, header_404
     mov x4, header_404_len
+    b send_reply
+
+reply_431:
+    adr_l x3, header_431
+    mov x4, header_431_len
     b send_reply
 
 ;; input
@@ -297,4 +308,4 @@ send_reply:
     mov x2, header_tail_len
     svc #0x80
 
-    b loop_end
+    b child_end

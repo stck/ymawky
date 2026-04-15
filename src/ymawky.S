@@ -1,7 +1,7 @@
 #include "defs.S"
 
 .global _main
-.global loop_end
+.global child_end
 .align 4
 
 .data
@@ -30,9 +30,9 @@ sockfd:             .skip 8
 
 .text
 _main:
-    ;; did we get a 
+    ;; did we get an argument
     cmp x0, #1
-    b.le _skip_argv
+    b.le skip_argv
 
     ;; get argv0.
     ldr x0, [x1, #8]
@@ -49,7 +49,7 @@ _main:
     adr_l x1, addr
     strh w0, [x1, #2]
 
-_skip_argv:
+skip_argv:
     ;; socket(AF_INET, SOCK_STREAM, 0)
     mov x16, SYS_socket
     mov x0, #2 ; AF_INET
@@ -125,7 +125,7 @@ Lreap:
     ;; a bit different. if you're on linux, you've got to change this to
     ;; cmp x0, #0
     cmp x1, #1
-    b.eq _child
+    b.eq child
 
     ;; otherwise close clientfd and loop
     mov x16, SYS_close
@@ -134,23 +134,53 @@ Lreap:
 
     b loop
 
-_child:
+child:
     ;; close sockfd
     mov x16, SYS_close
     ldr_l x0, sockfd
     svc #0x80
 
     ;; read(client_fd, buffer, buffer_size)
+    mov x7, #0
+read_loop:
     mov x16, SYS_read
     ldr_l x0, clientfd
     adr_l x1, buf
+    add x1, x1, x7 ; account for buffer being partially filled
     mov x2, BUF_SIZE
     svc #0x80
+    b.cs L500
+    add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
 
-    ;; If nothing is read, or if read fails, try again :)
-    b.cs loop_end
-    cbz x0, loop_end
+    adr_l x0, buf
+    mov x1, x7
+    bl parse_header_end
+    cmp x1, #0
+    b.eq Lno_header
 
+    ; header end was found, break out of the karmic cycle of reading
+    b Lheader_found
+
+Lheader_found:
+    mov x8, x1 ;; save the location of the header
+    b 2f
+
+Lno_header:
+    cmp x7, #0
+    b.le 2f ; this should really be L431 too, i believe?
+
+    cmp x7, #BUF_SIZE
+    b.ge L431
+
+    b read_loop
+
+L431:
+    b reply_431
+L500:
+    b reply_500
+
+2:
+    mov x0, x7 ;; restore x0 to be bytes-read
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
     strb wzr, [x1, x0] ; x0 -> length of bytes read
@@ -203,9 +233,9 @@ _child:
 
 3:
     mov x20, OPTIONS_REQ_ID
-    b reply_204 ;; reply_* always return to loop_end
+    b reply_204 ;; reply_* always return to child_end
 
-loop_end:
+child_end:
     ;; close(clientfd)
     mov x16, SYS_close
     ldr_l x0, clientfd
