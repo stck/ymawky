@@ -7,6 +7,9 @@
 .align 4
 
 .data
+;; table of file extension / corresponding MIME types.
+;; this table is offset by 40 bytes per entry; 8 bytes for the extension, and
+;; 32 bytes for the MIME type string.
 file_types:
     .asciz ".html"
     .skip 2

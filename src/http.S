@@ -7,6 +7,7 @@
 .global reply_501
 .align 4
 
+;; my god there has got to be a better way to handle this
 .data
 head_response:
     .ascii "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
@@ -99,8 +100,15 @@ get:
     b.cs 9f
 
     ;; now x0 should be file length, let's store it in x21
-    ;str_l x0, file_length
     mov x21, x0
+
+    ;; let's rewind the file back to the beginning
+    mov x16, SYS_lseek
+    ldr_l x0, file_des
+    mov x1, #0 ; offset
+    mov x2, #0 ; SEEK_SET, beginning
+    svc #0x80
+    b.cs 9f
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write
@@ -158,17 +166,14 @@ get:
     cmp x20, HEAD_REQ_ID
     b.eq 1f
 
-    ;; Write the contents of the requested file
-    ;;mov x16, SYS_write
-    ;;ldr_l x0, clientfd
-    ;;ldr_l x1, file_contents
-    ;;ldr_l x2, file_length
-    ;;svc #0x80
+    ;; if the file is 0 bytes long, let's skip the mmap and all that. just
+    ;; close the file.
+    cmp x21, #0
+    b.le 9f
 
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
     mov x0, #0
-    ;ldr_l x1, file_length
     mov x1, x21
     mov x2, #1 ; PROT_READ
     mov x3, #2 ; MAP_PRIVATE
@@ -221,7 +226,7 @@ _write_done:
     b loop_end
 
 reply_204:
-    ; write to stdout
+    ; write to stdout for logging and stuff
     mov x16, SYS_write
     mov x0, #1
     adr_l x1, header_204
@@ -257,8 +262,14 @@ reply_404:
     mov x4, header_404_len
     b send_reply
 
+;; input
+;; x3 -> header string
+;; x4 -> header length
+;;
+;; no output.
+;; clobbers x0-x3
 send_reply:
-    ; write to stdout
+    ; write to stdout for logging
     mov x16, SYS_write
     mov x0, #1
     mov x1, x3
@@ -272,7 +283,7 @@ send_reply:
     mov x2, header_tail_len
     svc #0x80
 
-    ; write to stdout
+    ; write to socket
     mov x16, SYS_write
     ldr_l x0, clientfd
     mov x1, x3

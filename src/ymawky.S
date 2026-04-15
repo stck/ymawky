@@ -86,6 +86,20 @@ _skip_argv:
     b.cs exit
 
 loop:
+;; reap any dead child processes
+Lreap:
+    mov x16, SYS_wait4
+    mov x0, #-1 ; any child
+    mov x1, #0  ; status = NULL
+    mov x2, #1  ; WNOHANG
+    mov x3, #0  ; rusage = NULL
+    svc #0x80
+    b.cs 1f
+    cmp x0, #0  ; if we reaped some children, there might be more
+    b.le 1f
+    b Lreap
+1:
+
     ;; accept(sockfd, NULL, NULL)
     mov x16, SYS_accept
     ldr_l x0, sockfd

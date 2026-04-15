@@ -26,6 +26,7 @@
 .equ SYS_write,      4
 .equ SYS_open,       5
 .equ SYS_close,      6
+.equ SYS_wait4,      7
 .equ SYS_accept,     30
 .equ SYS_munmap,     73
 .equ SYS_socket,     97
@@ -38,7 +39,6 @@
 
 ;; constants
 .equ BUF_SIZE,       16384
-.equ FILE_SIZE_MAX,  65536
 
 ;; request type ids
 .equ HEAD_REQ_ID,    0
