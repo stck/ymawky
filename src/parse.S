@@ -131,10 +131,16 @@ parse_path:
 
 _empty_filename:
     mov x5, x1 ; save filename_buf in x5
+    mov x2, www_prefix_len
+
+    ; the default file name, "index.html", is only for GET requests. if it's a
+    ; DELETE/PUT/POST/anything else, just "www/" is enough. we'll let the
+    ; system handle the error elsewhere if it causes problems.
+    cmp x20, GET_REQ_ID
+    b.ne Lnot_get
 
     adr_l x0, filename_buf
     ;; skip past the www/
-    mov x2, www_prefix_len
     add x0, x0, x2
 
     adr_l x1, default_file
@@ -142,12 +148,16 @@ _empty_filename:
     bl memcpy
 
     strb wzr, [x0] ;; null terminate
-    mov x0, x5
 
+    mov x0, x5
     mov x1, www_prefix_len
     mov x2, default_file_len
     add x1, x1, x2
 
+    b 5f
+Lnot_get:
+    mov x0, x5
+    mov x1, www_prefix_len
     b 5f
 
 ;; no match was when we were parsing the header for request type. since we cant
@@ -165,6 +175,9 @@ _empty_filename:
 ;; input
 ;; x0 -> string
 ;; x1 -> length
+;;
+;; return
+;; x1 -> index of the first byte after the header
 parse_header_end:
     adr_l x2, header_end
     mov x5, #0
@@ -184,7 +197,6 @@ parse_header_end:
 correct_char:
     add x6, x6, #1
 
-    ;cmp x6, header_end_len
     cmp x6, #3 ; length of \r\n\r\n
     b.ge end_found
 

@@ -1,12 +1,7 @@
 #include "defs.S"
 
 .global get
-.global reply_204
-.global reply_400
-.global reply_404
-.global reply_501
-.global reply_500
-.global reply_431
+.global delete
 .align 4
 
 ;; my god there has got to be a better way to handle this
@@ -20,36 +15,8 @@ head_content_type:
 .equ head_content_type_len, . - head_content_type
 
 good_response_tail:
-    .ascii "\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
+    .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE\r\nServer: ymawky\r\n\r\n"
 .equ good_response_tail_len, . - good_response_tail
-
-header_400:
-    .ascii "HTTP/1.1 400 Bad Request"
-.equ header_400_len, . - header_400
-
-header_431:
-    .ascii "HTTP/1.1 431 Request Header Fields Too Large"
-.equ header_431_len, . - header_431
-
-header_500:
-    .ascii "HTTP/1.1 500 Internal Server Error"
-.equ header_500_len, . - header_500
-
-header_501:
-    .ascii "HTTP/1.1 501 Not Implemented"
-.equ header_501_len, . - header_501
-
-header_404:
-    .ascii "HTTP/1.1 404 Not Found"
-.equ header_404_len, . - header_404
-
-header_204:
-    .ascii "HTTP/1.1 204 No Content\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
-.equ header_204_len, . - header_204
-
-header_tail:
-    .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
-.equ header_tail_len, . - header_tail
 
 .bss
 file_des:           .skip 8
@@ -62,38 +29,131 @@ content_length_len: .skip 8
 
 
 .text
-get:
-    ;; parse GET /..., extract the filename we're GETting.
+do_path_checks:
+    stp x29, x30, [sp, #-16]!
+
     adr_l x0, buf
     bl parse_path
-    cmp x0, #0 ; did parse_path return null? if so we gotta send a 400
-    b.eq reply_400
+    cbnz x0, 1f
+    brk #1
+    b reply_400
+1:
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
-    cmp x0, #0
-    b.eq reply_400
+    cbnz x0, 1f
+    brk #2
+    b reply_400
+1:
 
-    ;; store the decoded filename from parse_path into filename_str
-    ;; and the length into x1
     str_l x0, filename_str
     str_l x1, filename_len
 
-    ;; check for legal/illegal data in the path
     bl check_path_safety
-    cbz x0, reply_400
+    cbnz x0, 1f
+    brk #3
+    b reply_400
+1:
 
-    ;; if the path contains .., it's probably unsafe. so reject it.
     bl check_path_traversal
-    cbz x0, reply_400
+    cbnz x0, 1f
+    brk #4
+    b reply_400
+1:
 
+    ldp x29, x30, [sp], #16
+    ret
+
+handle_stat_failed:
+    cmp x0, #ENOENT
+    b.eq 404f
+
+    cmp x0, #ENOTDIR
+    b.eq 404f
+
+    cmp x0, #EACCESS
+    b.eq 403f
+
+    cmp x0, #ENAMETOOLONG
+    b.eq 414f
+
+    cmp x0, #ELOOP
+    b.eq 508f
+
+    b reply_500
+
+404:
+    b reply_404
+403:
+    b reply_403
+414:
+    b reply_414
+508:
+    b reply_508
+
+delete:
+    bl do_path_checks
+    ldr_l x0, filename_str
+
+    bl stat_path
+    cbnz x0, Ldelete_stat_failed
+    cmp w1, #S_IFREG
+    b.eq 1f
+    b reply_403
+1:
+
+    mov x16, SYS_unlink
+    ldr_l x0, filename_str
+    svc #0x80
+    b.cs Lunlink_failed
+
+    b reply_204
+
+;; these are really the same case, tbqh. the errno checks are the same. i use
+;; different label names for clarity when reading hehe
+Ldelete_stat_failed:
+Lunlink_failed:
+    ;; if the file doesn't exist (or was previously deleted), just reply 204
+    ;; since DELETE is idempotent.
+    cmp x0, #ENOENT
+    b.ne 1f
+    b reply_204
+1:
+
+    ;; if it's a dir, say it's not allowed. this could be 405, but i don't
+    ;; want to build Allow: headers properly, lol. at least yet.
+    cmp x0, #EISDIR
+    b.eq 1f
+
+    ;; other 403
+    cmp x0, #EACCESS
+    b.eq 1f
+    cmp x0, #EPERM
+    b.eq 1f
+    cmp x0, #EROFS
+    b.eq 1f
+
+    cmp x0, #EBUSY
+    b.ne 2f
+    b reply_409
+2:
+
+    b reply_500
+1:
+    b reply_403
+
+
+get:
+    bl do_path_checks
     ldr_l x0, filename_str
 
     mov x16, SYS_open
     ; x0 should already be set
     mov x1, #0 ; RDONLY
     svc #0x80
-    b.cs reply_404 ; if the carry flag is set, read failed so 404
+    b.cc 1f
+    b reply_404 ; if the carry flag is set, read failed so 404
+1:
 
     ;; save the file descriptor
     str_l x0, file_des
@@ -229,83 +289,4 @@ _write_done:
     svc #0x80
 
 1:
-    b child_end
-
-reply_204:
-    ; write to stdout for logging and stuff
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, header_204
-    mov x2, header_204_len
-    svc #0x80
-
-    ; write to socket
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, header_204
-    mov x2, header_204_len
-    svc #0x80
-
-    b child_end
-
-reply_500:
-    adr_l x3, header_500
-    mov x4, header_500_len
-    b send_reply
-
-reply_501:
-    adr_l x3, header_501
-    mov x4, header_501_len
-    b send_reply
-
-reply_400:
-    adr_l x3, header_400
-    mov x4, header_400_len
-    b send_reply
-
-reply_404:
-    adr_l x3, header_404
-    mov x4, header_404_len
-    b send_reply
-
-reply_431:
-    adr_l x3, header_431
-    mov x4, header_431_len
-    b send_reply
-
-;; input
-;; x3 -> header string
-;; x4 -> header length
-;;
-;; no output.
-;; clobbers x0-x3
-send_reply:
-    ; write to stdout for logging
-    mov x16, SYS_write
-    mov x0, #1
-    mov x1, x3
-    mov x2, x4
-    svc #0x80
-
-    ; write to stdout
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, header_tail
-    mov x2, header_tail_len
-    svc #0x80
-
-    ; write to socket
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    mov x1, x3
-    mov x2, x4
-    svc #0x80
-
-    ; write to socket
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, header_tail
-    mov x2, header_tail_len
-    svc #0x80
-
     b child_end

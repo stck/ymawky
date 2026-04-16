@@ -24,6 +24,10 @@ options_req:
     .ascii "OPTIONS "
 .equ options_req_len, . - options_req
 
+delete_req:
+    .ascii "DELETE "
+.equ delete_req_len, . - delete_req
+
 .bss
 sockfd:             .skip 8
 
@@ -84,7 +88,7 @@ skip_argv:
     mov x1, #5
     svc #0x80
     b.cs exit
-
+    b 1f
 loop:
 ;; reap any dead child processes
 Lreap:
@@ -111,6 +115,7 @@ Lreap:
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
 
+    b child
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
@@ -197,7 +202,6 @@ L500:
     adr_l x1, get_req
     mov x2, get_req_len
     bl strcmp
-
     cmp x0, #1
     b.eq 1f
 
@@ -206,7 +210,6 @@ L500:
     adr_l x1, head_req
     mov x2, head_req_len
     bl strcmp
-
     cmp x0, #1
     b.eq 2f
 
@@ -215,9 +218,16 @@ L500:
     adr_l x1, options_req
     mov x2, options_req_len
     bl strcmp
-
     cmp x0, #1
     b.eq 3f
+
+    ;; could be a DELETE request, i *guess*...
+    adr_l x0, buf
+    adr_l x1, delete_req
+    mov x2, delete_req_len
+    bl strcmp
+    cmp x0, #1
+    b.eq 4f
 
     ;; if it was none, reply 501
     b reply_501
@@ -234,6 +244,10 @@ L500:
 3:
     mov x20, OPTIONS_REQ_ID
     b reply_204 ;; reply_* always return to child_end
+
+4:
+    mov x20, DELETE_REQ_ID
+    b delete
 
 child_end:
     ;; close(clientfd)

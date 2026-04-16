@@ -1,5 +1,6 @@
 #include "defs.S"
 
+.global stat_path
 .global get_filetype
 .global check_path_traversal
 .global check_path_safety
@@ -93,6 +94,41 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 .equ unknown_ct_len, . - unknown_ct
 
 .text
+
+;; input
+;; x0 -> filename path
+;;
+;; returns
+;; x0 -> 0 on success, otherwise, errno from stat64
+;; x1 -> file type
+;; x2 -> size
+stat_path:
+    sub sp, sp, #160 ; reserve stack buffer (stat requires 144 bytes, round up)
+    mov x16, SYS_stat64
+    ;; x0 is already set
+    mov x1, sp ; stat buffer, on the stack
+    svc #0x80
+    b.cs Lstat_failed
+
+    ; read st_mode (halfword at offset 4 in stat buffer)
+    ldrh w1, [sp, #4]
+    and w1, w1, #0xF000 ; mask S_IFMT
+    ldr x2, [sp, #96] ; load st_size into x2
+    mov x0, #0
+    b Lstat_end
+
+Lstat_failed:
+    ;; x0 is already errno. these two movs aren't strictly necessary, but i
+    ;; think it's nice to have it all zeroed out.
+    mov x1, #0
+    mov x2, #0
+    ; NOTE fallthrough to stat_end
+
+Lstat_end:
+    add sp, sp, #160
+    ret
+
+
 ;; input
 ;; x0 -> filename string
 ;; x1 -> filename length
