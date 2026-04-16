@@ -35,14 +35,12 @@ do_path_checks:
     adr_l x0, buf
     bl parse_path
     cbnz x0, 1f
-    brk #1
     b reply_400
 1:
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
     cbnz x0, 1f
-    brk #2
     b reply_400
 1:
 
@@ -51,13 +49,11 @@ do_path_checks:
 
     bl check_path_safety
     cbnz x0, 1f
-    brk #3
     b reply_400
 1:
 
     bl check_path_traversal
     cbnz x0, 1f
-    brk #4
     b reply_400
 1:
 
@@ -68,8 +64,8 @@ handle_stat_failed:
     cmp x0, #ENOENT
     b.eq 404f
 
-    cmp x0, #ENOTDIR
-    b.eq 404f
+    ;cmp x0, #ENOTDIR
+    ;b.eq 404f
 
     cmp x0, #EACCESS
     b.eq 403f
@@ -119,7 +115,6 @@ Lunlink_failed:
     b.ne 1f
     b reply_204
 1:
-
     ;; if it's a dir, say it's not allowed. this could be 405, but i don't
     ;; want to build Allow: headers properly, lol. at least yet.
     cmp x0, #EISDIR
@@ -137,7 +132,6 @@ Lunlink_failed:
     b.ne 2f
     b reply_409
 2:
-
     b reply_500
 1:
     b reply_403
@@ -147,34 +141,23 @@ get:
     bl do_path_checks
     ldr_l x0, filename_str
 
+    bl stat_path
+    cbnz x0, handle_stat_failed
+    cmp w1, #S_IFREG
+    b.eq 1f
+    b reply_403
+1:
+    mov x21, x2 ; x2 should be file length from stat_path, store it in x21
+
     mov x16, SYS_open
-    ; x0 should already be set
+    ldr_l x0, filename_str
     mov x1, #0 ; RDONLY
     svc #0x80
     b.cc 1f
     b reply_404 ; if the carry flag is set, read failed so 404
 1:
-
     ;; save the file descriptor
     str_l x0, file_des
-
-    mov x16, SYS_lseek
-    ; x0 should now be the file descriptor
-    mov x1, #0 ; offset
-    mov x2, #2 ; SEEK_END
-    svc #0x80
-    b.cs 9f
-
-    ;; now x0 should be file length, let's store it in x21
-    mov x21, x0
-
-    ;; let's rewind the file back to the beginning
-    mov x16, SYS_lseek
-    ldr_l x0, file_des
-    mov x1, #0 ; offset
-    mov x2, #0 ; SEEK_SET, beginning
-    svc #0x80
-    b.cs 9f
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write
@@ -185,7 +168,6 @@ get:
 
     ;; we gotta print the file length in the header as Content-Length
     ;; so lets convert it to a string!
-    ;ldr_l x0, file_length
     mov x0, x21
     bl itoa
 

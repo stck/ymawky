@@ -214,12 +214,12 @@ check_path_safety:
 
     ;; everything under and including 0x1F, "US" or Unit Separator.
     cmp w3, #0x1F
-    b.le _unsafe_path
+    b.le _unsafe
 
     ;; everything including and after 0x7F, which is DELETE. everything after
     ;; that is not valid ascii anymore.
     cmp w3, #0x7F
-    b.ge _unsafe_path
+    b.ge _unsafe
 
     sub x1, x1, #1
     add x0, x0, #1
@@ -348,16 +348,16 @@ _encoded_char:
     orr w4, w5, w4 ; combine w5 (high nibble) with w4 (low nibble)
 
     cmp w4, #0
-    b.le _bad_end
+    b.eq _bad_end
 
     ;; now w4 contains the decoded byte
     strb w4, [x2, x3]
 
+    add x3, x3, #1
     sub x1, x1, #3
     cmp x1, #0
     b.le _decode_end
 
-    add x3, x3, #1
     add x0, x0, #3
     b _decode_loop
 

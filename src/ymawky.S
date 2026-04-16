@@ -88,7 +88,10 @@ skip_argv:
     mov x1, #5
     svc #0x80
     b.cs exit
-    b 1f
+;; NOTE NOTE NOTE
+;; uncomment this line to debug with lldb.
+;;  b 1f
+;; NOTE NOTE NOTE
 loop:
 ;; reap any dead child processes
 Lreap:
@@ -115,7 +118,10 @@ Lreap:
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
 
-    b child
+;; NOTE NOTE NOTE
+;; uncomment this line to debug with lldb.
+;;  b child
+;; NOTE NOTE NOTE
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
@@ -152,7 +158,8 @@ read_loop:
     ldr_l x0, clientfd
     adr_l x1, buf
     add x1, x1, x7 ; account for buffer being partially filled
-    mov x2, BUF_SIZE
+    sub x2, #BUF_SIZE, x7 ; BUF_SIZE - bytes_read
+    ;mov x2, BUF_SIZE
     svc #0x80
     b.cs L500
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
@@ -234,7 +241,6 @@ L500:
 
 1:
     mov x20, GET_REQ_ID
-    ;brk #0
     b get
 
 2:
