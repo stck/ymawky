@@ -111,6 +111,8 @@ stat_path:
     b.cs Lstat_failed
 
     ; read st_mode (halfword at offset 4 in stat buffer)
+    ; NOTE st_mode in struct stat64 is a mode_t (u16) inside the stat struct,
+    ; NOTE at offset 4. if that ever changes, look here!
     ldrh w1, [sp, #4]
     and w1, w1, #0xF000 ; mask S_IFMT
     ldr x2, [sp, #96] ; load st_size into x2
@@ -248,14 +250,15 @@ get_filetype:
     add x0, x0, x1 ; now x0 points to one past the end of the string
 
 1:
-    sub x0, x0, #1
-    ldrb w3, [x0]
-    cmp w3, #'.'
-    b.eq _found_extension
-
     ; are we at the start again? if so, no file extension was present.
     cmp x0, x4
     b.eq _return_unknown
+
+    sub x0, x0, #1
+
+    ldrb w3, [x0]
+    cmp w3, #'.'
+    b.eq _found_extension
 
     b 1b
 

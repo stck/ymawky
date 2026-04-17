@@ -197,7 +197,7 @@ parse_header_end:
 correct_char:
     add x6, x6, #1
 
-    cmp x6, #3 ; length of \r\n\r\n
+    cmp x6, #4 ; length of \r\n\r\n
     b.ge end_found
 
     add x5, x5, #1

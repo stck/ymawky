@@ -31,7 +31,6 @@ delete_req:
 .bss
 sockfd:             .skip 8
 
-
 .text
 _main:
     ;; did we get an argument
@@ -158,8 +157,8 @@ read_loop:
     ldr_l x0, clientfd
     adr_l x1, buf
     add x1, x1, x7 ; account for buffer being partially filled
-    sub x2, #BUF_SIZE, x7 ; BUF_SIZE - bytes_read
-    ;mov x2, BUF_SIZE
+    mov x6, #BUF_SIZE
+    sub x2, x6, x7 ; BUF_SIZE - bytes_read (six seveeen)
     svc #0x80
     b.cs L500
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
