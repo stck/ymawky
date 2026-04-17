@@ -1,5 +1,13 @@
 #include "defs.S"
 
+.macro mime_entry ext, mime
+9:
+    .asciz "\ext"
+    .space 8 - (. - 9b)      ;; ヽ(o＾▽＾o)ノ pad to offset 8 from entry start
+    .asciz "\mime"
+    .space 40 - (. - 9b)     ;; pad to offset 40 from entry start
+.endm
+
 .global stat_path
 .global get_filetype
 .global check_path_traversal
@@ -12,80 +20,21 @@
 ;; this table is offset by 40 bytes per entry; 8 bytes for the extension, and
 ;; 32 bytes for the MIME type string.
 file_types:
-    .asciz ".html"
-    .skip 2
-    .asciz "text/html; charset=utf-8"
-    .skip 7
-
-    .asciz ".css"
-    .skip 3
-    .asciz "text/css; charset=utf-8"
-    .skip 8
-
-    .asciz ".js"
-    .skip 4
-    .asciz "text/javascript; charset=utf-8"
-    .skip 1
-
-    .asciz ".json"
-    .skip 2
-    .asciz "application/json"
-    .skip 15
-
-    .asciz ".png"
-    .skip 3
-    .asciz "image/png"
-    .skip 22
-
-    .asciz ".jpg"
-    .skip 3
-    .asciz "image/jpeg"
-    .skip 21
-
-    .asciz ".jpeg"
-    .skip 2
-    .asciz "image/jpeg"
-    .skip 21
-
-    .asciz ".gif"
-    .skip 3
-    .asciz "image/gif"
-    .skip 22
-
-    .asciz ".svg"
-    .skip 3
-    .asciz "image/svg+xml"
-    .skip 18
-
-    .asciz ".ico"
-    .skip 3
-    .asciz "image/x-icon"
-    .skip 19
-
-    .asciz ".webp"
-    .skip 2
-    .asciz "image/webp"
-    .skip 21
-
-    .asciz ".txt"
-    .skip 3
-    .asciz "text/plain; charset=utf-8"
-    .skip 6
-
-    .asciz ".pdf"
-    .skip 3
-    .asciz "application/pdf"
-    .skip 16
-
-    .asciz ".woff2"
-    .skip 1
-    .asciz "font/woff2"
-    .skip 21
-
-    .asciz ".xml"
-    .skip 3
-    .asciz "text/xml; charset=utf-8"
-    .skip 8
+    mime_entry ".html",  "text/html; charset=utf-8"
+    mime_entry ".css",   "text/css; charset=utf-8"
+    mime_entry ".js",    "text/javascript; charset=utf-8"
+    mime_entry ".json",  "application/json"
+    mime_entry ".png",   "image/png"
+    mime_entry ".jpg",   "image/jpeg"
+    mime_entry ".jpeg",  "image/jpeg"
+    mime_entry ".gif",   "image/gif"
+    mime_entry ".svg",   "image/svg+xml"
+    mime_entry ".ico",   "image/x-icon"
+    mime_entry ".webp",  "image/webp"
+    mime_entry ".txt",   "text/plain; charset=utf-8"
+    mime_entry ".pdf",   "application/pdf"
+    mime_entry ".woff2", "font/woff2"
+    mime_entry ".xml",   "text/xml; charset=utf-8"
 
     ;; sentinel: empty extension = end of table
     .byte 0
