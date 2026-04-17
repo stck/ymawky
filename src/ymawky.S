@@ -161,6 +161,8 @@ read_loop:
     sub x2, x6, x7 ; BUF_SIZE - bytes_read (six seveeen)
     svc #0x80
     b.cs L500
+    mov x6, x0 ; stash number of bytes read() got in x6
+
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
 
     adr_l x0, buf
@@ -177,8 +179,8 @@ Lheader_found:
     b 2f
 
 Lno_header:
-    cmp x7, #0
-    b.le 2f ; this should really be L431 too, i believe?
+    cmp x6, #0 ;; x6 is number of bytes from read() now
+    b.eq child_end
 
     cmp x7, #BUF_SIZE
     b.ge L431
