@@ -1,5 +1,13 @@
 #include "defs.S"
 
+;; XXX FIXME HACK
+;; man there's got to be a better way to do this lol
+;; maybe:
+;; mov x0, #404
+;; b send_reply
+;; ? send_reply takes http code as an argument, checks the value of x0, then
+;; builds the header based on that?
+
 .global reply_204
 .global reply_400
 .global reply_403

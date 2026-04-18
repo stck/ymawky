@@ -53,9 +53,9 @@ atoi:
 
     ; make sure we actually have a number
     cmp w2, #'0'
-    b.lo _error
+    b.lo Latoi_error
     cmp w2, #'9'
-    b.hi _error
+    b.hi Latoi_error
 
     mul x1, x1, x3
     sub w2, w2, #'0'
@@ -66,7 +66,7 @@ atoi:
     mov x0, x1
     ret
 
-_error:
+Latoi_error:
     mrs x4, NZCV
     orr x4, x4, #0x20000000 ; set carry bit
     msr NZCV, x4

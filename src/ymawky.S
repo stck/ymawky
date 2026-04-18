@@ -4,11 +4,6 @@
 .global child_end
 .align 4
 
-.macro cb cond, r1, r2, l
-    cmp \r1, \r2
-    b.\cond \l
-.endm
-
 .data
 one: .word 1
 addr:
@@ -122,6 +117,8 @@ Lreap:
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
 
+    ;; TODO set a sock opt for read timeout? after accept? SO_RCVTIMEO?
+
 ;; NOTE NOTE NOTE
 ;; uncomment this line to debug with lldb.
 ;;  b child
@@ -181,7 +178,7 @@ read_loop:
 
 Lheader_found:
     mov x8, x1 ;; save the location of the header
-    b 2f
+    b 2f ;; break from the hell of reading
 
 Lno_header:
     cmp x6, #0 ;; x6 is number of bytes from read() now
@@ -247,50 +244,50 @@ Lread_failed:
     adr_l x0, buf
     adr_l x1, get_req
     mov x2, get_req_len
-    bl strcmp
+    bl streqn
     cmp x0, #1
-    b.eq 1f
+    b.eq Lget_method
 
     ;; check if maybe we got a HEAD request instead.
     adr_l x0, buf
     adr_l x1, head_req
     mov x2, head_req_len
-    bl strcmp
+    bl streqn
     cmp x0, #1
-    b.eq 2f
+    b.eq Lhead_method
 
     ;; hm. maybe it was an OPTIONS request?
     adr_l x0, buf
     adr_l x1, options_req
     mov x2, options_req_len
-    bl strcmp
+    bl streqn
     cmp x0, #1
-    b.eq 3f
+    b.eq Loptions_method
 
     ;; could be a DELETE request, i *guess*...
     adr_l x0, buf
     adr_l x1, delete_req
     mov x2, delete_req_len
-    bl strcmp
+    bl streqn
     cmp x0, #1
-    b.eq 4f
+    b.eq Ldelete_method
 
     ;; if it was none, reply 501
     b reply_501
 
-1:
+Lget_method:
     mov x20, GET_REQ_ID
     b get
 
-2:
+Lhead_method:
     mov x20, HEAD_REQ_ID
     b get
 
-3:
+Loptions_method:
     mov x20, OPTIONS_REQ_ID
     b reply_204 ;; reply_* always return to child_end
 
-4:
+Ldelete_method:
     mov x20, DELETE_REQ_ID
     b delete
 

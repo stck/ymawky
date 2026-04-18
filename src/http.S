@@ -34,58 +34,32 @@ do_path_checks:
 
     adr_l x0, buf
     bl parse_path
-    cbnz x0, 1f
-    b reply_400
-1:
+    cbz x0, L400
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
-    cbnz x0, 1f
-    b reply_400
-1:
+    cbz x0, L400
 
     str_l x0, filename_str
     str_l x1, filename_len
 
     bl check_path_safety
-    cbnz x0, 1f
-    b reply_400
-1:
+    cbz x0, L400
 
     bl check_path_traversal
-    cbnz x0, 1f
-    b reply_400
-1:
+    cbz x0, L400
 
     ldp x29, x30, [sp], #16
     ret
 
 handle_stat_failed:
-    cmp x0, #ENOENT
-    b.eq 404f
-
-    ;cmp x0, #ENOTDIR
-    ;b.eq 404f
-
-    cmp x0, #EACCES
-    b.eq 403f
-
-    cmp x0, #ENAMETOOLONG
-    b.eq 414f
-
-    cmp x0, #ELOOP
-    b.eq 508f
+    cb eq, x0, #ENOENT, L404
+    cb eq, x0, #EACCES, L403
+    cb eq, x0, #ENAMETOOLONG, L414
+    cb eq, x0, #ELOOP, L508
+    ;cb eq, x0, #ENOTDIR, L404
 
     b reply_500
-
-404:
-    b reply_404
-403:
-    b reply_403
-414:
-    b reply_414
-508:
-    b reply_508
 
 delete:
     bl do_path_checks
@@ -93,10 +67,7 @@ delete:
 
     bl stat_path
     cbnz x0, Ldelete_stat_failed
-    cmp w1, #S_IFREG
-    b.eq 1f
-    b reply_403
-1:
+    cb ne, w1, #S_IFREG, L403
 
     mov x16, SYS_unlink
     ldr_l x0, filename_str
@@ -111,31 +82,20 @@ Ldelete_stat_failed:
 Lunlink_failed:
     ;; if the file doesn't exist (or was previously deleted), just reply 204
     ;; since DELETE is idempotent.
-    cmp x0, #ENOENT
-    b.ne 1f
-    b reply_204
-1:
+    cb eq, x0, ENOENT, L204
+
     ;; if it's a dir, say it's not allowed. this could be 405, but i don't
     ;; want to build Allow: headers properly, lol. at least yet.
-    cmp x0, #EISDIR
-    b.eq 1f
+    cb eq, x0, #EISDIR, L403
+    ;; other various 403s.
+    cb eq, x0, #EACCES, L403
+    cb eq, x0, #EPERM, L403
+    cb eq, x0, #EROFS, L403
+    ;; file is busy/conflict
+    cb eq, x0, #EBUSY, L409
 
-    ;; other 403
-    cmp x0, #EACCES
-    b.eq 1f
-    cmp x0, #EPERM
-    b.eq 1f
-    cmp x0, #EROFS
-    b.eq 1f
-
-    cmp x0, #EBUSY
-    b.ne 2f
-    b reply_409
-2:
+    ;; just default to 500
     b reply_500
-1:
-    b reply_403
-
 
 get:
     bl do_path_checks
@@ -144,20 +104,24 @@ get:
     bl stat_path
     cbnz x0, handle_stat_failed
     cmp w1, #S_IFREG
-    b.eq 1f
-    b reply_403
-1:
+    b.ne L403
+
     mov x21, x2 ; x2 should be file length from stat_path, store it in x21
 
     mov x16, SYS_open
     ldr_l x0, filename_str
     mov x1, #0 ; RDONLY
     svc #0x80
-    b.cc 1f
-    b reply_404 ; if the carry flag is set, read failed so 404
-1:
+    b.cs L404 ; if the carry flag is set, open() failed so 404
+
     ;; save the file descriptor
     str_l x0, file_des
+
+    ;; TODO
+    ;; write the header into a buffer, then mmap file, then write header to
+    ;; the socket, check if HEAD method, if not, write file contents to socket
+    ;; then close/munmap file. this would prevent a mangled half-header from
+    ;; being sent if one of these writes fails.
 
     ;; write(clientfd, response, response_len)
     mov x16, SYS_write
@@ -165,6 +129,7 @@ get:
     adr_l x1, head_response
     mov x2, head_response_len
     svc #0x80
+    b.cs Lget_end
 
     ;; we gotta print the file length in the header as Content-Length
     ;; so lets convert it to a string!
@@ -180,6 +145,7 @@ get:
     ldr_l x1, content_length_str
     ldr_l x2, content_length_len
     svc #0x80
+    b.cs Lget_end
 
     ;; Write \r\nContent-Type: 
     mov x16, SYS_write
@@ -187,6 +153,7 @@ get:
     adr_l x1, head_content_type
     mov x2, head_content_type_len
     svc #0x80
+    b.cs Lget_end
 
     ;; Get content type
     ldr_l x0, filename_str
@@ -200,6 +167,7 @@ get:
     mov x1, x0 ;; string
     ldr_l x0, clientfd
     svc #0x80
+    b.cs Lget_end
 
     ;; Write the \r\n\r\n
     mov x16, SYS_write
@@ -207,17 +175,18 @@ get:
     adr_l x1, good_response_tail
     mov x2, good_response_tail_len
     svc #0x80
+    b.cs Lget_end
 
     ;; x20 is the request type, currently GET or HEAD.
     ;; if it's a HEAD request, we just want to output the header, which we've
     ;; done, so jump to the end
     cmp x20, HEAD_REQ_ID
-    b.eq 1f
+    b.eq Lget_end
 
     ;; if the file is 0 bytes long, let's skip the mmap and all that. just
     ;; close the file.
     cmp x21, #0
-    b.le 9f
+    b.le Lget_end
 
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
@@ -228,7 +197,7 @@ get:
     ldr_l x4, file_des ; file descriptor
     mov x5, #0 ; offset
     svc #0x80
-    b.cs 9f
+    b.cs Lget_end
     ;; x0 is now the pointer to memory for the file
 
     ;; stash the pointer somewhere safe
@@ -238,10 +207,10 @@ get:
     ;; x21 -> total length of file
     mov x10, x12  ; current position
     mov x11, x21 ; remaining bytes
-_write_loop:
+Lwrite_loop:
     ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
     ;; loop.
-    cbz x11, _write_done
+    cbz x11, Lwrite_done
 
     ;; write(clientfd, mmap_ptr, size)
     mov x16, SYS_write
@@ -249,26 +218,36 @@ _write_loop:
     mov x1, x10
     mov x2, x11
     svc #0x80
-    b.cs 9f ;; uh oh something went wrong, we gotta mmunmap the file
+    b.cs Lwrite_done ;; uh oh something went wrong, we gotta mmunmap the file
             ;; and stuff now.
 
     ; x0 -> bytes written
     add x10, x10, x0 ; advance the pointer by x0 bytes
     sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
-    b _write_loop
+    b Lwrite_loop
 
-_write_done:
+Lwrite_done:
     mov x16, SYS_munmap
     mov x0, x12
     mov x1, x21
     svc #0x80
-    b.cs 9f
+    ;; if munmap fails, b.cs would just branch to Lget_end anyway. so just
+    ;; fall through either way.
 
 ;; close the file
-9:
+Lget_end:
     mov x16, SYS_close
     ldr_l x0, file_des
     svc #0x80
 
 1:
     b child_end
+
+L204: b reply_204
+L400: b reply_400
+L403: b reply_403
+L404: b reply_404
+L409: b reply_409
+L414: b reply_414
+L500: b reply_500
+L508: b reply_508

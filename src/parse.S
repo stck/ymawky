@@ -2,7 +2,7 @@
 
 .global parse_path
 .global parse_header_end
-.global strcmp
+.global streqn
 .align 4
 
 ;; this is PATH_MAX
@@ -39,20 +39,20 @@ parse_path:
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
 ;; this is basically strchr
-1:
+Lstrchr_loop:
     ;; load the current byte at the string pointer, and check if it's /
     ldrb w3, [x0]
     cmp w3, #'/'
-    b.eq 1f
+    b.eq Lchar_found
 
     ;; if we haven't reached a / in the first 16 bytes, we'll fail
     cmp x1, #16
-    b.eq 4f
+    b.eq Lno_match
 
     ;; if we reached a NULL byte in the first 16 bytes, it's definitely a
     ;; weird request header. so, let's just fail.
     cmp w3, #0
-    b.eq 4f
+    b.eq Lno_match
 
     ;; if we got here, we gotta loop again. < 16 bytes in, no / reached, and no
     ;; NULL byte reached. increment string index and loop
@@ -61,14 +61,14 @@ parse_path:
     
     ;; save previous byte so we can check for preceding ' '
     mov w2, w3
-    b 1b
+    b Lstrchr_loop
 
 ;; If we got here, we found a '/'. let's make sure the preceding byte -- stored
 ;; in x2, is a ' ' so we only match ' /'. that way we avoid 'HTTP/1.1'
 ;; "matching".
-1:
+Lchar_found:
     cmp w2, #' '
-    b.ne 4f
+    b.ne Lno_match
 
     add x0, x0, #1 ;; skip past the '/' which we're currently on
 
@@ -95,41 +95,41 @@ parse_path:
     mov x3, x8
     mov x4, www_prefix_len
 
-2:
+Lfilename_loop:
     cmp x4, filename_buf_size ; bounds check
-    b.ge 4f
+    b.ge Lno_match
 
     ldrb w3, [x0, x2] ; load byte from header+index
-    cbz w3, 4f ; is it NULL? go to 4f if it is
+    cbz w3, Lno_match ; is it NULL? go to 4f if it is
 
     cmp w3, #' ' ; is it a space?
-    b.eq 3f ; we're done once we reach a space
+    b.eq Lfilename_done ; we're done once we reach a space
 
     cmp w3, #'\r'
-    b.eq 4f
+    b.eq Lno_match
 
     cmp w3, #'\n'
-    b.eq 4f
+    b.eq Lno_match
 
     ;; ok, we're not done
     strb w3, [x1, x4] ; copy byte to filename_buf+index
     add x4, x4, #1 ; increment the filename index
     add x2, x2, #1 ; increment the header index
-    b 2b ; and loop
+    b Lfilename_loop
 
-3:
+Lfilename_done:
     ;; is the length the same as the www/ prefix? if it is, we didn't actually
     ;; get a file.
     mov x5, www_prefix_len
     cmp x4, x5
-    b.eq _empty_filename
+    b.eq Lempty_filename
 
     strb wzr, [x1, x4] ;; null-terminate filename_buf
     mov x0, x1 ; we want x0 to point to the filename string
     mov x1, x4 ; x1 is the length of the filename
-    b 5f
+    b Lparse_return
 
-_empty_filename:
+Lempty_filename:
     mov x5, x1 ; save filename_buf in x5
     mov x2, www_prefix_len
 
@@ -154,20 +154,20 @@ _empty_filename:
     mov x2, default_file_len
     add x1, x1, x2
 
-    b 5f
+    b Lparse_return
 Lnot_get:
     mov x0, x5
     mov x1, www_prefix_len
-    b 5f
+    b Lparse_return
 
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
-4:
+Lno_match:
     mov x0, #0
     mov x1, #0
-    b 5f
+    b Lparse_return
 
-5:
+Lparse_return:
     ;; restore the link register and ret
     ldp x29, x30, [sp], #16
     ret
@@ -182,41 +182,41 @@ parse_header_end:
     adr_l x2, header_end
     mov x5, #0
     mov x6, #0
-1:
+Lheader_end_loop:
     cmp x5, x1
-    b.ge no_end_found
+    b.ge Lno_end_found
 
     ldrb w3, [x0, x5]
     ldrb w4, [x2, x6]
 
     cmp w3, w4
-    b.eq correct_char
+    b.eq Lcorrect_char
 
-    b incorrect_char
+    b Lincorrect_char
 
-correct_char:
+Lcorrect_char:
     add x6, x6, #1
 
     cmp x6, #4 ; length of \r\n\r\n
-    b.ge end_found
+    b.ge Lend_found
 
     add x5, x5, #1
-    b 1b
+    b Lheader_end_loop
 
-incorrect_char:
+Lincorrect_char:
     mov x6, #0
     cmp w3, #'\r' ; this \r starts a new potential match, eg, \r\n\r>\r<\n\r\n
     b.ne 2f
     mov x6, #1
 2:
     add x5, x5, #1
-    b 1b
+    b Lheader_end_loop
 
-end_found:
+Lend_found:
     add x1, x5, #1
     ret
 
-no_end_found:
+Lno_end_found:
     mov x1, #0
     ret
 
@@ -228,26 +228,26 @@ no_end_found:
 ;;
 ;; returns
 ;; x0 -> 1 if match, 0 if doesn't match
-strcmp:
+streqn:
     ldrb w3, [x0]
     ldrb w4, [x1]
     cmp w3, w4
-    b.ne _no_match
+    b.ne Lstreqn_no_match
 
-    cbz w3, _match ;; both equal and both NULL = end of string = match
+    cbz w3, Lstreqn_match ;; both equal and both NULL = end of string = match
 
     ;; if we've reached the end, it's a match yeah?
     subs x2, x2, #1
-    b.eq _match
+    b.eq Lstreqn_match
 
     add x0, x0, #1
     add x1, x1, #1
-    b strcmp
+    b streqn
 
-_match:
+Lstreqn_match:
     mov x0, #1
     ret
 
-_no_match:
+Lstreqn_no_match:
     mov x0, #0
     ret

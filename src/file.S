@@ -73,7 +73,7 @@ Lstat_failed:
     ;; think it's nice to have it all zeroed out.
     mov x1, #0
     mov x2, #0
-    ; NOTE fallthrough to stat_end
+    ; NOTE fallthrough to Lstat_end
 
 Lstat_end:
     add sp, sp, #160
@@ -91,22 +91,26 @@ Lstat_end:
 ;; x2 -> index into string
 ;; x3 -> dot count per segment
 ;; x4 -> segment length
+;; this just checks for path traversal: GET /../../file.txt
+;; it does not do anything else. one "." is fine. more than two "..." is fine.
+;; two ".." in a file "foo..txt" is fine. but a path segment being just .. is
+;; no good!
 check_path_traversal:
     mov x2, #0
     mov x3, #0
     mov x4, #0
 
-_loop:
+Lloop:
     cmp x2, x1
-    b.ge _check_segment
+    b.ge Lcheck_segment
 
     ldrb w5, [x0, x2]
 
     cmp w5, #'/'
-    b.eq _check_segment
+    b.eq Lcheck_segment
 
     cmp w5, #0
-    b.eq _check_segment
+    b.eq Lcheck_segment
 
     add x2, x2, #1
     add x4, x4, #1
@@ -114,37 +118,37 @@ _loop:
     cmp w5, #'.'
     b.eq 2f
 
-    b _loop
+    b Lloop
 
 2:
     add x3, x3, #1
-    b _loop
+    b Lloop
 
-_check_segment:
+Lcheck_segment:
     cmp x3, x4
-    b.eq _equal_length
+    b.eq Lequal_length
 
 3:
     mov x3, #0
     mov x4, #0
 
     cmp x2, x1
-    b.ge _safe_path
+    b.ge Lno_path_traversal
 
     add x2, x2, #1
-    b _loop
+    b Lloop
 
-_equal_length:
+Lequal_length:
     cmp x3, #2
-    b.eq _unsafe_path
+    b.eq Lpath_traversal
 
     b 3b
 
-_safe_path:
+Lno_path_traversal:
     mov x0, #1
     ret
 
-_unsafe_path:
+Lpath_traversal:
     mov x0, #0
     ret
 
@@ -159,28 +163,28 @@ check_path_safety:
                    ; rid of that
 1:
     ;; if we've reached the end and no issues yet, it's safe
-    cbz x1, _safe
+    cbz x1, Lsafe
 
     ldrb w3, [x0]
 
     ;; everything under and including 0x1F, "US" or Unit Separator.
     cmp w3, #0x1F
-    b.le _unsafe
+    b.le Lunsafe
 
     ;; everything including and after 0x7F, which is DELETE. everything after
     ;; that is not valid ascii anymore.
     cmp w3, #0x7F
-    b.ge _unsafe
+    b.ge Lunsafe
 
     sub x1, x1, #1
     add x0, x0, #1
     b 1b
 
-_safe:
+Lsafe:
     mov x0, #1
     ret
 
-_unsafe:
+Lunsafe:
     mov x0, #0
     ret
 
@@ -201,18 +205,18 @@ get_filetype:
 1:
     ; are we at the start again? if so, no file extension was present.
     cmp x0, x4
-    b.eq _return_unknown
+    b.eq Lreturn_unknown
 
     sub x0, x0, #1
 
     ldrb w3, [x0]
     cmp w3, #'.'
-    b.eq _found_extension
+    b.eq Lfound_extension
 
     b 1b
 
 ;; Ok, now x0 is pointing at the '.' in the filename
-_found_extension:
+Lfound_extension:
     mov x5, x0 ;; save this position
     mov x6, x1
 
@@ -221,34 +225,34 @@ _found_extension:
 1:
     ldrb w3, [x1]
     cmp w3, #0
-    b.eq _return_unknown
+    b.eq Lreturn_unknown
 
     mov x7, x1 ;; save table pointer
     mov x0, x5 ;; filename, from . and on
     mov x2, #8
-    bl strcmp
+    bl streqn
 
     cmp x0, #1
-    b.eq _match
+    b.eq Lmatch
 
     add x1, x7, #40
     b 1b
 
-_match:
+Lmatch:
     add x6, x7, #8
     mov x1, x6 ;; strlen takes x1
     bl strlen  ;; x0 is now length
     mov x1, x0 ;; we want to return length in x1
     mov x0, x6
-    b _return
+    b Lreturn
 
 
-_return_unknown:
+Lreturn_unknown:
     adr_l x0, unknown_ct
     mov x1, unknown_ct_len
-    b _return
+    b Lreturn
  
-_return:
+Lreturn:
     ;; restore the link register we pushed to the stack
     ldp x29, x30, [sp], #16
     ret
@@ -265,14 +269,14 @@ decode_url:
     mov x2, x0 ; write pointer
     mov x3, #0 ;; x3 is length of new string
 
-_decode_loop:
+Ldecode_loop:
     ldrb w4, [x0]
     ;; make sure we're not null
     cmp w4, #0
-    b.eq _decode_end
+    b.eq Ldecode_end
 
     cmp w4, #'%'
-    b.eq _encoded_char
+    b.eq Lencoded_char
 
     strb w4, [x2, x3]
     add x3, x3, #1
@@ -280,27 +284,27 @@ _decode_loop:
     ;; make sure we're not reading beyond the length of the string
     sub x1, x1, #1
     cmp x1, #0
-    b.eq _decode_end
+    b.eq Ldecode_end
 
     add x0, x0, #1 ; increment along the new string to the next char
-    b _decode_loop
+    b Ldecode_loop
 
-_encoded_char:
+Lencoded_char:
     cmp x1, #3
-    b.lt _bad_end
+    b.lt Lbad_end
 
     ;; high nibble
     ldrb w4, [x0, #1]
-    bl _hex_to_val
+    bl hex_to_val
     lsl w5, w4, #4 ; stash in w5
 
     ;; low nibble
     ldrb w4, [x0, #2]
-    bl _hex_to_val
+    bl hex_to_val
     orr w4, w5, w4 ; combine w5 (high nibble) with w4 (low nibble)
 
     cmp w4, #0
-    b.eq _bad_end
+    b.eq Lbad_end
 
     ;; now w4 contains the decoded byte
     strb w4, [x2, x3]
@@ -308,23 +312,23 @@ _encoded_char:
     add x3, x3, #1
     sub x1, x1, #3
     cmp x1, #0
-    b.le _decode_end
+    b.le Ldecode_end
 
     add x0, x0, #3
-    b _decode_loop
+    b Ldecode_loop
 
-_hex_to_val:
+hex_to_val:
     orr w4, w4, #0x20
 
     cmp w4, #'0'
-    b.lt _bad_end
+    b.lt Lbad_end
     cmp w4, #'9'
     b.le 1f
 
     cmp w4, #'a'
-    b.lt _bad_end
+    b.lt Lbad_end
     cmp w4, #'f'
-    b.gt _bad_end
+    b.gt Lbad_end
 
     sub w4, w4, #'a' - 10
     ret
@@ -332,7 +336,7 @@ _hex_to_val:
     sub w4, w4, #'0'
     ret
 
-_decode_end:
+Ldecode_end:
     ldp x29, x30, [sp], #16
     mov x0, x2
     mov x1, x3
@@ -340,7 +344,7 @@ _decode_end:
     strb wzr, [x0, x1] ;; null terminate decoded string
     ret
 
-_bad_end:
+Lbad_end:
     ldp x29, x30, [sp], #16
     mov x0, #0
     mov x1, #0

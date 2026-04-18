@@ -19,6 +19,12 @@
     str \src, [\scratch, \sym@PAGEOFF]
 .endm
 
+;; (c)ompare and (b)ranch, (eq/ne/gt/etc), x0, x1, label
+.macro cb cond, r1, r2, l
+    cmp \r1, \r2
+    b.\cond \l
+.endm
+
 ;; syscalls
 .equ SYS_exit,       1
 .equ SYS_fork,       2
