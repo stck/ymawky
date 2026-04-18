@@ -67,7 +67,7 @@ handle_stat_failed:
     ;cmp x0, #ENOTDIR
     ;b.eq 404f
 
-    cmp x0, #EACCESS
+    cmp x0, #EACCES
     b.eq 403f
 
     cmp x0, #ENAMETOOLONG
@@ -121,7 +121,7 @@ Lunlink_failed:
     b.eq 1f
 
     ;; other 403
-    cmp x0, #EACCESS
+    cmp x0, #EACCES
     b.eq 1f
     cmp x0, #EPERM
     b.eq 1f

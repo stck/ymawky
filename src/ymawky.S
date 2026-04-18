@@ -4,6 +4,11 @@
 .global child_end
 .align 4
 
+.macro cb cond, r1, r2, l
+    cmp \r1, \r2
+    b.\cond \l
+.endm
+
 .data
 one: .word 1
 addr:
@@ -160,7 +165,7 @@ read_loop:
     mov x6, #BUF_SIZE
     sub x2, x6, x7 ; BUF_SIZE - bytes_read (six seveeen)
     svc #0x80
-    b.cs L500
+    b.cs Lread_failed
     mov x6, x0 ; stash number of bytes read() got in x6
 
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
@@ -180,8 +185,12 @@ Lheader_found:
 
 Lno_header:
     cmp x6, #0 ;; x6 is number of bytes from read() now
-    b.eq child_end
+    b.ne 1f ; if nonzero, check buffer fill state
+    cmp x7, #0 ; if we read nothing,
+    b.eq child_end ; go to child_end and silently exit
+    b reply_400 ; otherwise if we're done reading but still no header, send 400
 
+1:
     cmp x7, #BUF_SIZE
     b.ge L431
 
@@ -189,7 +198,36 @@ Lno_header:
 
 L431:
     b reply_431
-L500:
+Lread_failed:
+    ; if read was interrupted by a signal, retry instead of exiting. doesn't
+    ; affect x7/buf offset.
+    cmp x0, #EINTR
+    b.eq read_loop
+    ;; HACK FIXME just testing
+    ;; x0 is errno
+    mov x4, x0
+    bl itoa ;; x0 -> str, x1 -> len
+    mov x2, x1
+    mov x1, x0
+    mov x16, SYS_write
+    mov x0, #1
+    svc #0x80
+    mov x0, x4 ; restore the "read" errno
+    ;; FIXME HACK testing just
+    ;; TODO
+    ;; check if errno is ECONNRESET, ECONNABORTED, ETIMEDOUT, then just
+    ;; silently exit if so. otherwise, return server error.
+    cb eq, x0, #ECONNRESET, child_end
+    cb eq, x0, #ETIMEDOUT, child_end
+    cb eq, x0, #ECONNABORTED, child_end
+    cb eq, x0, #EPIPE, child_end
+    cb eq, x0, #ENETDOWN, child_end
+    cb eq, x0, #ENETUNREACH, child_end
+    cb eq, x0, #ENETRESET, child_end
+    cb eq, x0, #EHOSTDOWN, child_end
+    cb eq, x0, #EHOSTUNREACH, child_end
+    ;; EAGAIN -> 408
+
     b reply_500
 
 2:
