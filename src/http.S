@@ -19,16 +19,110 @@ good_response_tail:
 .equ good_response_tail_len, . - good_response_tail
 
 .bss
-file_des:           .skip 8
-filename_str:       .skip 8
-filename_len:       .skip 8
-file_contents:      .skip 8
-file_length:        .skip 8
-content_length_str: .skip 8
-content_length_len: .skip 8
+file_des:             .skip 8
+filename_str:         .skip 8
+filename_len:         .skip 8
+file_contents:        .skip 8
+file_length:          .skip 8
+content_length_str:   .skip 8
+content_length_len:   .skip 8
+.equ header_buf_size, 512
+header_buf:           .skip header_buf_size
 
 
 .text
+write_header:
+    stp x29, x30, [sp, #-16]!
+
+    adr_l x13, header_buf
+    mov x14, #0 ; counter of bytes writteen to header_buf
+
+    ;; copy "HTTP/1.1 200 OK...", beginning of header, to header_buf
+    mov x0, x13
+    adr_l x1, head_response
+    mov x2, head_response_len
+    ;; make sure we don't write past header_buf's memory!
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
+
+    ;; get file-length (stored in x21 register in get, which is hack-y.
+    ;; fixme in the future!!
+    mov x0, x21
+    bl itoa
+
+    ;; copy content-length string into header_buf
+    mov x2, x1  ; content_length_len (length of string)
+    mov x1, x0  ; content_length_str
+    mov x0, x13 ; header_buf + offset
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    ;; copy "\r\nContent-Type:" to buffer
+    ; x0 is already set from previous memcpy
+    adr_l x1, head_content_type
+    mov x2, head_content_type_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
+    bl get_filetype
+
+    ;; write filename to header_buf
+    mov x2, x1 ; filename_len
+    mov x1, x0 ; source string, filename_str
+    mov x0, x13 ; destination, header_buf
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    ;; write the \r\n\r\n
+    ; x0 is still set from memcpy
+    adr_l x1, good_response_tail
+    mov x2, good_response_tail_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    adr_l x10, header_buf ; beginning of header_buf
+    ;; fall through to head_write_loop
+Lhead_write_loop:
+    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
+    ;; loop.
+    cbz x14, Lhead_write_done
+
+    ;; write(clientfd, mmap_ptr, size)
+    mov x16, SYS_write
+    ldr_l x0, clientfd
+    mov x1, x10
+    mov x2, x14
+    svc #0x80
+    b.cs Lhead_write_failed
+
+    ; x0 -> bytes written
+    add x10, x10, x0 ; advance the pointer by x0 bytes
+    sub x14, x14, x0 ; and decrease remaining bytes by x0 bytes
+    b Lhead_write_loop
+
+Lhead_write_done:
+    mov x0, #0
+    b 1f
+Lhead_write_failed:
+    mov x0, #1
+    b 1f
+Lheader_too_big:
+    mov x0, #2
+    b 1f
+1:
+    ldp x29, x30, [sp], #16
+    ret
+
+
 do_path_checks:
     stp x29, x30, [sp, #-16]!
 
@@ -57,7 +151,6 @@ handle_stat_failed:
     cb eq, x0, #EACCES, L403
     cb eq, x0, #ENAMETOOLONG, L414
     cb eq, x0, #ELOOP, L508
-    ;cb eq, x0, #ENOTDIR, L404
 
     b reply_500
 
@@ -82,7 +175,7 @@ Ldelete_stat_failed:
 Lunlink_failed:
     ;; if the file doesn't exist (or was previously deleted), just reply 204
     ;; since DELETE is idempotent.
-    cb eq, x0, ENOENT, L204
+    cb eq, x0, #ENOENT, L204
 
     ;; if it's a dir, say it's not allowed. this could be 405, but i don't
     ;; want to build Allow: headers properly, lol. at least yet.
@@ -117,67 +210,17 @@ get:
     ;; save the file descriptor
     str_l x0, file_des
 
-    ;; TODO
-    ;; write the header into a buffer, then mmap file, then write header to
-    ;; the socket, check if HEAD method, if not, write file contents to socket
-    ;; then close/munmap file. this would prevent a mangled half-header from
-    ;; being sent if one of these writes fails.
+    bl write_header
 
-    ;; write(clientfd, response, response_len)
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, head_response
-    mov x2, head_response_len
-    svc #0x80
-    b.cs Lget_end
+    ;; if write_header returned 2, that means header was too large for some
+    ;; reason. 500.
+    cmp x0, #2
+    b.eq L500
+    ;; otherwise if it's 1, that means a write failed somewhere. just give up
+    cmp x0, #1
+    b.eq Lget_end ; wire broke :(
+    ;; if it returned 0 it's good :3
 
-    ;; we gotta print the file length in the header as Content-Length
-    ;; so lets convert it to a string!
-    mov x0, x21
-    bl itoa
-
-    str_l x0, content_length_str ; pointer to start of string
-    str_l x1, content_length_len ; length of string
-
-    ;; write content-length
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    ldr_l x1, content_length_str
-    ldr_l x2, content_length_len
-    svc #0x80
-    b.cs Lget_end
-
-    ;; Write \r\nContent-Type: 
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, head_content_type
-    mov x2, head_content_type_len
-    svc #0x80
-    b.cs Lget_end
-
-    ;; Get content type
-    ldr_l x0, filename_str
-    ldr_l x1, filename_len
-    bl get_filetype
-
-    ;; Now x0 is content-type string, x1 is the length of said string
-    ;; write the content type to clientfd
-    mov x16, SYS_write
-    mov x2, x1 ;; length
-    mov x1, x0 ;; string
-    ldr_l x0, clientfd
-    svc #0x80
-    b.cs Lget_end
-
-    ;; Write the \r\n\r\n
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, good_response_tail
-    mov x2, good_response_tail_len
-    svc #0x80
-    b.cs Lget_end
-
-    ;; x20 is the request type, currently GET or HEAD.
     ;; if it's a HEAD request, we just want to output the header, which we've
     ;; done, so jump to the end
     cmp x20, HEAD_REQ_ID

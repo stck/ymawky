@@ -52,7 +52,7 @@ header_404: .ascii "HTTP/1.1 404 Not Found"
 .equ header_404_len, . - header_404
 
 header_204:
-    .ascii "HTTP/1.1 204 No Content\r\nAllow: GET, HEAD, OPTIONS\r\nServer: ymawky\r\n\r\n"
+    .ascii "HTTP/1.1 204 No Content\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE\r\nServer: ymawky\r\n\r\n"
 .equ header_204_len, . - header_204
 
 header_tail:
