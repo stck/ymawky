@@ -12,6 +12,7 @@
 .global reply_400
 .global reply_403
 .global reply_404
+.global reply_408
 .global reply_414
 .global reply_431
 .global reply_500
@@ -20,6 +21,9 @@
 .global reply_409
 
 .data
+header_408: .ascii "HTTP/1.1 408 Request Timeout"
+.equ header_408_len, . - header_408
+
 header_409: .ascii "HTTP/1.1 409 Conflict"
 .equ header_409_len, . - header_409
 
@@ -73,6 +77,11 @@ reply_204:
     svc #0x80
 
     b child_end
+
+reply_408:
+    adr_l x3, header_408
+    mov x4, header_408_len
+    b send_reply
 
 reply_409:
     adr_l x3, header_409

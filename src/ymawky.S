@@ -5,7 +5,13 @@
 .align 4
 
 .data
+.align 3
+rcv_timeout:
+    .quad 10  ; tv_sec, 10 second timeout. change for longer.
+    .quad 0   ; tv_usec
+
 one: .word 1
+
 addr:
     .byte 0x02, 0x00             ; AF_INET (2) + padding byte
     .byte 0x1f, 0x90             ; Port 8080, big-endian
@@ -89,7 +95,7 @@ skip_argv:
     b.cs exit
 ;; NOTE NOTE NOTE
 ;; uncomment this line to debug with lldb.
-;;  b 1f
+  b 1f
 ;; NOTE NOTE NOTE
 loop:
 ;; reap any dead child processes
@@ -103,6 +109,7 @@ Lreap:
     b.cs 1f
     cmp x0, #0  ; if we reaped some children, there might be more
     b.le 1f
+
     b Lreap
 1:
 
@@ -121,7 +128,7 @@ Lreap:
 
 ;; NOTE NOTE NOTE
 ;; uncomment this line to debug with lldb.
-;;  b child
+  b child
 ;; NOTE NOTE NOTE
     ;; fork()
     mov x16, SYS_fork
@@ -152,6 +159,27 @@ child:
     ldr_l x0, sockfd
     svc #0x80
 
+    ;; setsockopt() with a 10 second SO_RCVTIMEO timeout, to prevent
+    ;; connections from staying open indefinitely
+    mov x16, SYS_setsockopt
+    ldr_l x0, clientfd
+    mov x1, #0xFFFF ; SOL_SOCKET
+    mov x2, #0x1006 ; SO_RCVTIMEO = 0x1006
+    adr_l x3, rcv_timeout ; 10 seconds, 0 usec
+    mov x4, #16 ; struct timeval is 16 bytes
+    svc #0x80
+    b.cs child_end
+
+    ;; setsockopt(), SO_NOSIGPIPE
+    mov x16, SYS_setsockopt
+    ldr_l x0, clientfd
+    mov x1, 0xFFFF ; SOL_SOCKET
+    mov x2, 0x1022 ; SO_NOSIGPIPE
+    adr_l x3, one
+    mov x4, #4
+    svc #0x80
+    b.cs child_end
+
     ;; read(client_fd, buffer, buffer_size)
     mov x7, #0
 read_loop:
@@ -162,7 +190,7 @@ read_loop:
     mov x6, #BUF_SIZE
     sub x2, x6, x7 ; BUF_SIZE - bytes_read (six seveeen)
     svc #0x80
-    b.cs Lread_failed
+    b.cs read_failed
     mov x6, x0 ; stash number of bytes read() got in x6
 
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
@@ -195,23 +223,11 @@ Lno_header:
 
 L431:
     b reply_431
-Lread_failed:
+read_failed:
     ; if read was interrupted by a signal, retry instead of exiting. doesn't
     ; affect x7/buf offset.
     cmp x0, #EINTR
     b.eq read_loop
-    ;; HACK FIXME just testing
-    ;; x0 is errno
-    mov x4, x0
-    bl itoa ;; x0 -> str, x1 -> len
-    mov x2, x1
-    mov x1, x0
-    mov x16, SYS_write
-    mov x0, #1
-    svc #0x80
-    mov x0, x4 ; restore the "read" errno
-    ;; FIXME HACK testing just
-    ;; TODO
     ;; check if errno is ECONNRESET, ECONNABORTED, ETIMEDOUT, then just
     ;; silently exit if so. otherwise, return server error.
     cb eq, x0, #ECONNRESET, child_end
@@ -223,9 +239,11 @@ Lread_failed:
     cb eq, x0, #ENETRESET, child_end
     cb eq, x0, #EHOSTDOWN, child_end
     cb eq, x0, #EHOSTUNREACH, child_end
-    ;; EAGAIN -> 408
+    cb eq, x0, #EAGAIN, L408
 
     b reply_500
+L408:
+    b reply_408
 
 2:
     mov x0, x7 ;; restore x0 to be bytes-read
