@@ -7,8 +7,26 @@
 .data
 .align 3
 rcv_timeout:
-    .quad 10  ; tv_sec, 10 second timeout. change for longer.
+    .quad 30  ; tv_sec, 30 second timeout per read. change for longer.
     .quad 0   ; tv_usec
+
+;; also 30 second time for total header -- prevent slowloris-like attackers
+;; from opening a connection and sending <1 byte/min or something, hogging
+;; resources.
+.align 3
+read_timer_on:
+    .quad 0   ; it_interval.tv_sec
+    .quad 0   ; it_interval.tv_usec
+    .quad 30  ; it_value.tv_sec
+    .quad 0   ; it_value.tv_usec
+
+;; disarm timer
+.align 3
+read_timer_off:
+    .quad 0
+    .quad 0
+    .quad 0
+    .quad 0
 
 one: .word 1
 
@@ -39,10 +57,23 @@ sockfd:             .skip 8
 
 .text
 _main:
+    mov x28, #0
     ;; did we get an argument
     cmp x0, #1
     b.le skip_argv
 
+    ldrb w0, [x1, #8]
+    ; if it's less than 'A' (0x41), it's probably a number. so if it is, just
+    ; treat it as a port. otherwise, if it's > A (so any letter), let's treat
+    ; it as a debug option. pretty hack-y, but supes helpful for debugging, so
+    ; we can automatically not fork().
+    cmp w0, #'A'
+    b.lt 2f
+
+    mov x28, #1
+    b skip_argv
+
+2:
     ;; get argv0.
     ldr x0, [x1, #8]
     bl atoi
@@ -95,7 +126,8 @@ skip_argv:
     b.cs exit
 ;; NOTE NOTE NOTE
 ;; uncomment this line to debug with lldb.
-  b 1f
+  ;b 1f
+    cbnz x28, 1f
 ;; NOTE NOTE NOTE
 loop:
 ;; reap any dead child processes
@@ -128,7 +160,8 @@ Lreap:
 
 ;; NOTE NOTE NOTE
 ;; uncomment this line to debug with lldb.
-  b child
+  ;b child
+    cbnz x28, child
 ;; NOTE NOTE NOTE
     ;; fork()
     mov x16, SYS_fork
@@ -180,6 +213,13 @@ child:
     svc #0x80
     b.cs child_end
 
+    ;; arm timer before reading, 30 second total time to read
+    mov x16, SYS_setitimer
+    mov x0, #0 ; ITIMER_REAL
+    adr_l x1, read_timer_on
+    mov x2, #0
+    svc #0x80
+
     ;; read(client_fd, buffer, buffer_size)
     mov x7, #0
 read_loop:
@@ -187,11 +227,11 @@ read_loop:
     ldr_l x0, clientfd
     adr_l x1, buf
     add x1, x1, x7 ; account for buffer being partially filled
-    mov x6, #BUF_SIZE
-    sub x2, x6, x7 ; BUF_SIZE - bytes_read (six seveeen)
+    mov x22, #BUF_SIZE
+    sub x2, x22, x7 ; BUF_SIZE - bytes_read (six seveeen)
     svc #0x80
     b.cs read_failed
-    mov x6, x0 ; stash number of bytes read() got in x6
+    mov x22, x0 ; stash number of bytes read() got in x22
 
     add x7, x7, x0 ; save x0 because parse_header_end clobbers it. cumulatively
 
@@ -209,7 +249,7 @@ Lheader_found:
     b 2f ;; break from the hell of reading
 
 Lno_header:
-    cmp x6, #0 ;; x6 is number of bytes from read() now
+    cmp x22, #0 ;; x22 is number of bytes from read() now
     b.ne 1f ; if nonzero, check buffer fill state
     cmp x7, #0 ; if we read nothing,
     b.eq child_end ; go to child_end and silently exit
@@ -246,6 +286,13 @@ L408:
     b reply_408
 
 2:
+    ;; disarm timer
+    mov x16, SYS_setitimer
+    mov x0, #0
+    adr_l x1, read_timer_off
+    mov x2, #0
+    svc #0x80
+
     mov x0, x7 ;; restore x0 to be bytes-read
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
