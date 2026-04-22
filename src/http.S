@@ -31,6 +31,14 @@ header_buf:           .skip header_buf_size
 
 
 .text
+;; build a header, store it into header_buf, and then write it to the socket
+;; in a loop, accounting for partial-writes.
+;; input
+;; none i believe, it uses data in .bss
+;;
+;; output
+;; x0 -> 0 on success, 1 if write() failed, 2 if resulting header would be
+;;       too large.
 write_header:
     stp x29, x30, [sp, #-16]!
 
@@ -122,7 +130,12 @@ Lheader_too_big:
     ldp x29, x30, [sp], #16
     ret
 
-
+;; decode hex/safety check/traversal check for a given path.
+;; input
+;; none, uses data from .bss
+;;
+;; output
+;; none -- responds with 400 or other error codes if needed.
 do_path_checks:
     stp x29, x30, [sp, #-16]!
 
@@ -146,6 +159,13 @@ do_path_checks:
     ldp x29, x30, [sp], #16
     ret
 
+;; handler function for stat64() failing. route to the proper HTTP reponse
+;; based on errno.
+;; input
+;; x0 -> errno
+;;
+;; output
+;; none, branches to reply_* and quits.
 handle_stat_failed:
     cb eq, x0, #ENOENT, L404
     cb eq, x0, #EACCES, L403
@@ -154,6 +174,12 @@ handle_stat_failed:
 
     b reply_500
 
+;; handle "DELETE /" method.
+;; input
+;; none, uses .bss data
+;;
+;; output
+;; none, replies either 204 or some error code and quits.
 delete:
     bl do_path_checks
     ldr_l x0, filename_str
@@ -190,6 +216,50 @@ Lunlink_failed:
     ;; just default to 500
     b reply_500
 
+;; handle "PUT /" method.
+;; input
+;; x0 -> header
+;; x1 -> length of header
+;;
+;; output
+;; none, proc quits after handling.
+put:
+    bl do_path_checks
+    ldr_l x0, filename_str
+
+    bl parse_content_length
+
+    brk #1
+    ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
+    ;; 1. open filename_str                                                 ;;
+    ;; 2. check for errors opening                                          ;;
+    ;; 3. use header length and some total_header_bytes register to         ;;
+    ;;    determine the offset in case the header chunk contains some of the;;
+    ;;    data to be PUT.                                                   ;;
+    ;; 4. write whatever is remaining from the buffer to the file.          ;;
+    ;; 5. read/write loop until EOF. read from socket writing to file.      ;;
+    ;; 6. close it i guess                                                  ;;
+    ;; 7. reply with a header for:                                          ;;
+    ;;    201 File Created for new file,                                    ;;
+    ;;    204 New Content for overwritten file,                             ;;
+    ;; Content-Length: 0 since PUT response body is empty.                  ;;
+    ;; Optionally Location: /path on 201. Unneeded.                         ;;
+    ;; Errors to consider:                                                  ;;
+    ;; 1. 400 Bad Request -- Malformed Request (bad Content-Length, missing ;;
+    ;;    headers)                                                          ;;
+    ;; 2. 403 Forbidden -- Path traversal attempt or permissions violations ;;
+    ;; 3. 411 Length Required -- no Content-Length header                   ;;
+    ;; 4. 413 Payload Too Large -- body exceeds some maximum filesize.      ;;
+    ;; 5. 500 Internal Server Error -- disk full, write() failed, other     ;;
+    ;;    system errors.                                                    ;;
+    ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
+
+;; handle "GET /" method.
+;; input
+;; none, uses .bss data
+;;
+;; output
+;; none, proc quits after handling.
 get:
     bl do_path_checks
     ldr_l x0, filename_str
@@ -286,6 +356,9 @@ Lget_end:
 1:
     b child_end
 
+;; i can't cmp xN, xN; b.eq reply_*, since reply_* are in other files. it's
+;; too far for conditional branching. so, i've gotta have these private labels
+;; so i can conditionally branch.
 L204: b reply_204
 L400: b reply_400
 L403: b reply_403

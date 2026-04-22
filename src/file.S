@@ -44,6 +44,7 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 
 .text
 
+;; run stat64() on file at a given path, returning file size and type.
 ;; input
 ;; x0 -> filename path
 ;;
@@ -80,6 +81,10 @@ Lstat_end:
     ret
 
 
+;; checks for path traversal: GET /../../file.txt
+;; it does not do anything else. one "." is fine. more than two "..." is fine.
+;; two ".." in a file "foo..txt" is fine. but a path segment being just .. is
+;; no good!
 ;; input
 ;; x0 -> filename string
 ;; x1 -> filename length
@@ -91,10 +96,6 @@ Lstat_end:
 ;; x2 -> index into string
 ;; x3 -> dot count per segment
 ;; x4 -> segment length
-;; this just checks for path traversal: GET /../../file.txt
-;; it does not do anything else. one "." is fine. more than two "..." is fine.
-;; two ".." in a file "foo..txt" is fine. but a path segment being just .. is
-;; no good!
 check_path_traversal:
     mov x2, #0
     mov x3, #0
@@ -152,6 +153,7 @@ Lpath_traversal:
     mov x0, #0
     ret
 
+;; ensure a path only has ascii characters.
 ;; input
 ;; x0 -> path to check
 ;; x1 -> path length
@@ -159,9 +161,6 @@ Lpath_traversal:
 ;; returns
 ;; x0 -> 1 if safe, 0 if unsafe
 check_path_safety:
-    ;sub x1, x1, #1 ; x1 is the length including the NULL byte. let's get
-                   ; rid of that
-1:
     ;; if we've reached the end and no issues yet, it's safe
     cbz x1, Lsafe
 
@@ -178,7 +177,7 @@ check_path_safety:
 
     sub x1, x1, #1
     add x0, x0, #1
-    b 1b
+    b check_path_safety
 
 Lsafe:
     mov x0, #1
@@ -188,6 +187,7 @@ Lunsafe:
     mov x0, #0
     ret
 
+;; given a filename, extract the extension and return MIME type.
 ;; input
 ;; x0 -> filename
 ;; x1 -> filename length
@@ -246,7 +246,6 @@ Lmatch:
     mov x0, x6
     b Lreturn
 
-
 Lreturn_unknown:
     adr_l x0, unknown_ct
     mov x1, unknown_ct_len
@@ -257,6 +256,7 @@ Lreturn:
     ldp x29, x30, [sp], #16
     ret
 
+;; convert %XX in URL to 0xXX raw bytes. %20 = newline, %0a = space, etc.
 ;; input
 ;; x0 -> encoded string
 ;; x1 -> length of encoded string

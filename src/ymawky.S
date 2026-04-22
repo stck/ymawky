@@ -228,7 +228,7 @@ read_loop:
     adr_l x1, buf
     add x1, x1, x7 ; account for buffer being partially filled
     mov x22, #BUF_SIZE
-    sub x2, x22, x7 ; BUF_SIZE - bytes_read (six seveeen)
+    sub x2, x22, x7 ; BUF_SIZE - bytes_read
     svc #0x80
     b.cs read_failed
     mov x22, x0 ; stash number of bytes read() got in x22
@@ -297,6 +297,7 @@ L408:
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
     strb wzr, [x1, x0] ; x0 -> length of bytes read
+    mov x18, x0 ;; store length of buffer in x18
 
     ;; this just writes the request to stdout
     mov x2, x0
@@ -343,10 +344,19 @@ L408:
 Lget_method:
     mov x20, GET_REQ_ID
     b get
+    b child_end ; should never reach here, but just in case!
+
+Lput_method:
+    mov x20, PUT_REQ_ID
+    adr_l x0, buf
+    mov x1, x18
+    b put
+    b child_end ; should never reach here, but just in case!
 
 Lhead_method:
     mov x20, HEAD_REQ_ID
     b get
+    b child_end ; should never reach here, but just in case!
 
 Loptions_method:
     mov x20, OPTIONS_REQ_ID
@@ -355,6 +365,7 @@ Loptions_method:
 Ldelete_method:
     mov x20, DELETE_REQ_ID
     b delete
+    b child_end ; should never reach here, but just in case!
 
 child_end:
     ;; close(clientfd)

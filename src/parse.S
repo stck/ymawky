@@ -2,6 +2,7 @@
 
 .global parse_path
 .global parse_header_end
+.global parse_content_length
 .global streqn
 .align 4
 
@@ -11,6 +12,9 @@
 .data
 header_end: .ascii "\r\n\r\n"
 .equ header_end_len, . - header_end
+
+content_len_match_str: .ascii "content-length"
+.equ content_len_match_len, . - content_len_match_str
 
 www_prefix: .ascii "www/"
 .equ www_prefix_len, . - www_prefix
@@ -24,6 +28,172 @@ filename_buf: .skip filename_buf_size + 1
 .align 3 ;; fix broken alignment again
 
 .text
+;; input
+;; x0 -> HTTP header from client
+;; x1 -> length of header
+;;
+;; return
+;; x0 -> content length as an integer
+parse_content_length:
+    stp x29, x30, [sp, #-48]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+
+    mov x19, x0  ; headers
+    mov x20, x1  ; length
+    mov x21, #0  ; index
+    mov x22, #-1 ; value, sentinel -1 = not found yet
+
+pcl_scan:
+    cmp x21, x20
+    b.ge pcl_done
+
+    ldrb w2, [x19, x21]
+    cmp w2, #'\r'
+    b.ne Lscan_again
+
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge pcl_done
+
+    ldrb w2, [x19, x21]
+    cmp w2, #'\n'
+    b.ne pcl_scan ; x21 already advanced. lone \r, so keep scanning.
+
+    ;; we're at \r\n, next line begins at x21+1
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge pcl_done
+
+    ldrb w2, [x19, x21]
+    cmp w2, #' '
+    b.eq L400
+    cmp w2, #'\t'
+    b.eq L400
+
+    ;add x21, x21, #1
+    ;cmp x21, x20
+    ;b.ge pcl_done
+
+    ;; if (length - index) < strlen("content-length:"), end of header is too
+    ;; soon.
+    sub x3, x20, x21
+    cmp x3, #content_len_match_len
+    b.lt pcl_done
+
+    ;ldr x0, [x19, x21]
+    add x0, x19, x21
+    adr_l x1, content_len_match_str
+    mov x2, #content_len_match_len
+    bl streqn_i
+
+    cmp x0, #0
+    b.eq Lscan_again
+
+    ;; if we're here, it was a match!
+    ;; let's just make sure the sentinel isn't already set, as in, we haven't
+    ;; already found a separate content-length header field, and this is a
+    ;; duplicate.
+bp1:
+    cmp x22, #-1
+    b.ne pcl_malformed
+
+    add x21, x21, #content_len_match_len
+    cmp x21, x20
+    b.ge pcl_done
+
+    ;; make sure "content-length" is followed immediately by a ":", otherwise
+    ;; reject it.
+    ldrb w2, [x19, x21]
+    cmp w2, #':'
+    b.ne Lscan_again
+
+Lskip_ws:
+    ;; gotta bounds check on every byte. got i hate string parsing!
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge pcl_done
+
+    ldrb w2, [x19, x21]
+    cmp w2, #' '
+    b.eq Lskip_ws
+    cmp w2, #'\t'
+    b.eq Lskip_ws
+    ;; got past the whitespace
+
+    ;; get the length of numbers
+    mov x0, x21
+    mov x1, #0
+Lget_cl_len:
+    ldrb w2, [x19, x0]
+    cmp w2, #'0'
+    b.lt Lgot_cl_len
+    cmp w2, #'9'
+    b.gt Lgot_cl_len
+
+    add x1, x1, #1
+    add x0, x0, #1
+    cmp x0, x20
+    b.ge pcl_done
+
+    b Lget_cl_len
+
+Lgot_cl_len:
+    ;; now x1 is the number of digits following "content-length:", after
+    ;; whitespace.
+    ;; but first, if the next character is *not* \r, then it means content
+    ;; length has some string like "124afoo", which is invalid.
+    cmp w2, #'\r'
+    b.ne pcl_malformed
+
+    ;; if the header ends like "content-length: foo" with nothing after, like
+    ;; no \r\n\r\n, it's malformed. this isn't a strict check -- just makes
+    ;; sure the end of content-length is not the last byte of the header.
+    cmp x0, x20
+    b.ge pcl_malformed
+
+    ;; ensure x1 has a reasonable size to prevent overflows. 20 characters
+    cmp x1, #20
+    b.gt pcl_malformed
+
+    ;; load the string + pointer index into x0
+    mov x0, x19
+    add x0, x0, x21
+    ;; x1 is still set
+    bl atoi
+
+    ;; now x0 should be the length!
+    mov x22, x0
+
+    ;; fall through to Lscan_again
+Lscan_again:
+    add x21, x21, #1
+    b pcl_scan
+
+pcl_done:
+    cmp x22, #-1
+    b.eq pcl_err
+
+    mov x0, x22
+    cmn xzr, xzr ; clears carry bit
+    b pcl_epilogue
+
+pcl_malformed:
+    cmp xzr, xzr ; sets carry bit
+    mov x0, #1 ; 1 means malformed header
+    b pcl_epilogue
+
+pcl_err:
+    cmp xzr, xzr ; sets carry bit
+    mov x0, #0 ; 0 means other error, like no content-length found
+    ;; fall through
+
+pcl_epilogue:
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    ret
+
 ;; input
 ;; x0 -> HTTP header from client ("GET /...")
 ;; 
@@ -220,6 +390,43 @@ Lno_end_found:
     mov x1, #0
     ret
 
+
+;; case insensitive streqn
+;; input
+;; x0 -> str1
+;; x1 -> str2
+;; x2 -> max length
+;;
+;; returns
+;; x0 -> 1 if match, 0 if doesn't match
+streqn_i:
+    ;; load bytes
+    ldrb w3, [x0]
+    ldrb w4, [x1]
+    ;; make them both lowercase by OR'ing with 0x20, doesn't affect other
+    ;; characters than alphabetical.
+    orr w3, w3, #0x20
+    orr w4, w4, #0x20
+    cmp w3, w4
+    b.ne Lstreqn_i_no_match
+
+    cbz w3, Lstreqn_i_match ; both equal and both NULL = end of string = match
+
+    ;; if we've reached the end, it's a match yeah?
+    subs x2, x2, #1
+    b.eq Lstreqn_i_match
+
+    add x0, x0, #1
+    add x1, x1, #1
+    b streqn_i
+
+Lstreqn_i_match:
+    mov x0, #1
+    ret
+
+Lstreqn_i_no_match:
+    mov x0, #0
+    ret
 
 ;; input
 ;; x0 -> str1

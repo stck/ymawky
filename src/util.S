@@ -12,6 +12,8 @@ itoa_buf: .skip 20
 .align 3
 
 .text
+
+;; convert integer into non-NULL-terminated string.
 ;; input
 ;; x0 -> number to convert
 ;;
@@ -39,6 +41,7 @@ itoa:
     mov x1, x2 ; x1 = length
     ret
 
+;; convert NULL-terminated string to integer
 ;; input
 ;; x0 -> pointer to string
 ;;
@@ -73,6 +76,47 @@ Latoi_error:
     mov x0, #0
     ret
 
+;; convert string representation of number into an integer. read up to N bytes
+;; from string, does not need to be NULL terminated.
+;; input
+;; x0 -> pointer to string
+;; x1 -> length of string
+;;
+;; returns
+;; x0 -> integer representation of string
+atoi_n:
+    mov x2, #0
+    mov x4, #10
+2:
+    cbz x1, 3f
+
+    ldrb w3, [x0]
+
+    ; make sure we actually have a number
+    cmp w3, #'0'
+    b.lo Latoi_n_error
+    cmp w3, #'9'
+    b.hi Latoi_n_error
+
+    mul x2, x2, x4
+    sub w3, w3, #'0'
+    add x2, x2, x3
+    add x0, x0, #1
+
+    sub x1, x1, #1
+    b 2b
+3:
+    mov x0, x2
+    ret
+
+Latoi_n_error:
+    mrs x5, NZCV
+    orr x5, x5, #0x20000000 ; set carry bit
+    msr NZCV, x5
+    mov x0, #0
+    ret
+
+;; copies N bytes from x1 into x0
 ;; input
 ;; x0 -> destination
 ;; x1 -> source
@@ -91,6 +135,7 @@ memcpy:
 1:
     ret
 
+;; gets the length of a NULL-terminated string.
 ;; input
 ;; x1 -> string whose length to check
 ;;
