@@ -408,6 +408,8 @@ Lno_end_found:
 ;; returns
 ;; x0 -> 1 if match, 0 if doesn't match
 streqn_i:
+    cbz x2, Lstreqn_i_match
+1:
     ;; load bytes
     ldrb w3, [x0]
     ldrb w4, [x1]
@@ -426,7 +428,7 @@ streqn_i:
 
     add x0, x0, #1
     add x1, x1, #1
-    b streqn_i
+    b 1b
 
 Lstreqn_i_match:
     mov x0, #1

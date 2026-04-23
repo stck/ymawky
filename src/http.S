@@ -150,10 +150,11 @@ do_path_checks:
 
     str_l x0, filename_str
     str_l x1, filename_len
-
     bl check_path_safety
     cbz x0, L400
 
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
     bl check_path_traversal
     cbz x0, L400
 
