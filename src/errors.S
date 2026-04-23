@@ -15,6 +15,7 @@
 .global reply_404
 .global reply_408
 .global reply_411
+.global reply_413
 .global reply_414
 .global reply_431
 .global reply_500
@@ -46,6 +47,9 @@ header_409: .ascii "HTTP/1.1 409 Conflict"
 
 header_411: .ascii "HTTP/1.1 411 Length Required"
 .equ header_411_len, . - header_411
+
+header_413: .ascii "HTTP/1.1 413 Content Too Large"
+.equ header_413_len, . - header_413
 
 header_414: .ascii "HTTP/1.1 414 URI Too Long"
 .equ header_414_len, . - header_414
@@ -118,6 +122,11 @@ reply_409:
 reply_411:
     adr_l x3, header_411
     mov x4, header_411_len
+    b send_reply
+
+reply_413:
+    adr_l x3, header_413
+    mov x4, header_413_len
     b send_reply
 
 reply_414:

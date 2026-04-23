@@ -348,13 +348,14 @@ Lput_readwrite_loop:
     ;; did we read 0 bytes? we're done if so. should this be b.lo? i'd like it
     ;; to be less than or equal, but i believe lo is just less-than. maybe 2
     ;; cmps? like cmp #0, b.eq, and b.lo? 
-    ;cmp x26, #0
-    ;b.le Lput_read_zero
     cbz x26, Lput_read_zero
 
     b Lput_readwrite_loop
 
 Lput_read_failed:
+    cmp x0, #EAGAIN
+    b.eq L408
+
     b reply_500
 
 ;; if we read 0 bytes, check if we were actually done reading. if
@@ -374,7 +375,7 @@ Lput_read_zero:
     ldr_l x0, filename_str
     svc #0x80
 4:
-    b L500
+    b L400
 
 
 Lput_done:
@@ -386,7 +387,6 @@ Lput_done:
 ;; exist yet. otherwise, branch to handle_stat_failed, which will branch to the
 ;; relevant http response.
 Lput_stat_failed:
-bp1:
     cmp x0, #ENOENT
     b.ne 2f
 
@@ -395,7 +395,6 @@ bp1:
     b 1b
 ;; stat failed for some reason other than ENOENT.
 2:
-bp2:
     b handle_stat_failed
 
 ;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
@@ -405,33 +404,12 @@ Lpcl_error:
     b.eq L400
     cmp x0, #0
     b.eq L411
+    cmp x0, #2
+    b.eq L413
 
     ;; should never reach here. but just in case!
     b L500
-    
-    ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
-    ;; 1. open filename_str                                                 ;;
-    ;; 2. check for errors opening                                          ;;
-    ;; 3. use header length and some total_header_bytes register to         ;;
-    ;;    determine the offset in case the header chunk contains some of the;;
-    ;;    data to be PUT.                                                   ;;
-    ;; 4. write whatever is remaining from the buffer to the file.          ;;
-    ;; 5. read/write loop until EOF. read from socket writing to file.      ;;
-    ;; 6. close it i guess                                                  ;;
-    ;; 7. reply with a header for:                                          ;;
-    ;;    201 File Created for new file,                                    ;;
-    ;;    204 New Content for overwritten file,                             ;;
-    ;; Content-Length: 0 since PUT response body is empty.                  ;;
-    ;; Optionally Location: /path on 201. Unneeded.                         ;;
-    ;; Errors to consider:                                                  ;;
-    ;; 1. 400 Bad Request -- Malformed Request (bad Content-Length, missing ;;
-    ;;    headers)                                                          ;;
-    ;; 2. 403 Forbidden -- Path traversal attempt or permissions violations ;;
-    ;; 3. 411 Length Required -- no Content-Length header                   ;;
-    ;; 4. 413 Payload Too Large -- body exceeds some maximum filesize.      ;;
-    ;; 5. 500 Internal Server Error -- disk full, write() failed, other     ;;
-    ;;    system errors.                                                    ;;
-    ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
+
 put_epilogue:
     ldp x25, x26, [sp, #48]
     ldp x21, x22, [sp, #32]
@@ -551,10 +529,10 @@ L204: b reply_204
 L400: b reply_400
 L403: b reply_403
 L404: b reply_404
+L408: b reply_408
 L409: b reply_409
 L411: b reply_411
+L413: b reply_413
 L414: b reply_414
-L500:
-    brk #0
-    b reply_500
+L500: b reply_500
 L508: b reply_508

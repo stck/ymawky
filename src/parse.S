@@ -8,6 +8,7 @@
 
 ;; this is PATH_MAX
 .equ filename_buf_size, 4096
+.equ MAX_BODY_SIZE, 1024 * 1024 * 1024
 
 .data
 header_end: .ascii "\r\n\r\n"
@@ -70,10 +71,6 @@ pcl_scan:
     b.eq L400
     cmp w2, #'\t'
     b.eq L400
-
-    ;add x21, x21, #1
-    ;cmp x21, x20
-    ;b.ge pcl_done
 
     ;; if (length - index) < strlen("content-length:"), end of header is too
     ;; soon.
@@ -153,7 +150,7 @@ Lgot_cl_len:
 
     ;; ensure x1 has a reasonable size to prevent overflows. 20 characters
     cmp x1, #20
-    b.gt pcl_malformed
+    b.gt pcl_body_too_large
 
     ;; load the string + pointer index into x0
     mov x0, x19
@@ -161,6 +158,12 @@ Lgot_cl_len:
     ;; x1 is still set
     bl atoi_n
     b.cs pcl_malformed
+
+    ;; let's also cap it at 1GB (by default). change MAX_BODY_SIZE at the top
+    ;; of the file to customize.
+    mov x1, #MAX_BODY_SIZE
+    cmp x0, x1
+    b.hi pcl_body_too_large
 
     ;; now x0 should be the length!
     mov x22, x0
@@ -176,6 +179,11 @@ pcl_done:
 
     mov x0, x22
     cmn xzr, xzr ; clears carry bit
+    b pcl_epilogue
+
+pcl_body_too_large:
+    cmp xzr, xzr ; sets carry bit
+    mov x0, #2 ; 2 means Content-Length: X value is too large
     b pcl_epilogue
 
 pcl_malformed:
