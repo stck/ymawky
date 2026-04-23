@@ -315,8 +315,13 @@ Lempty_filename:
     ; DELETE/PUT/POST/anything else, just "www/" is enough. we'll let the
     ; system handle the error elsewhere if it causes problems.
     cmp x20, GET_REQ_ID
-    b.ne Lnot_get
+    b.eq 1f
+    cmp x20, HEAD_REQ_ID
+    b.eq 1f
 
+    b Lnot_get
+
+1:
     adr_l x0, filename_buf
     ;; skip past the www/
     add x0, x0, x2

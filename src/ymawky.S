@@ -162,16 +162,14 @@ Lreap:
 
     ;; TODO set a sock opt for read timeout? after accept? SO_RCVTIMEO?
 
-;; NOTE NOTE NOTE
-;; uncomment this line to debug with lldb.
-  ;b child
+    ;; we check if x28 is set, indicated "d" was passed to cli. if it was, skip
+    ;; fork -- it's much easier to debug with lldb if there's no forking :(
     cbnz x28, child
-;; NOTE NOTE NOTE
+
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
-    ;; if it fails, we just want to close clientfd and loop anyway, so there's
-    ;; no particular error handling/b.cs here.
+    b.cs 2f
 
     ;; if we're in the child, go there
     ;; NOTE
@@ -182,7 +180,7 @@ Lreap:
     ;; cmp x0, #0
     cmp x1, #1
     b.eq child
-
+2:
     ;; otherwise close clientfd and loop
     mov x16, SYS_close
     ldr_l x0, clientfd
@@ -298,14 +296,12 @@ L408:
     mov x2, #0
     svc #0x80
 
-    ;mov x0, x7 ;; restore x0 to be bytes-read
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
     strb wzr, [x1, x24] ; x24 -> length of bytes read
-    ;mov x24, x0 ;; store length of buffer in x24
 
     ;; this just writes the request to stdout
-    mov x2, x0
+    mov x2, x23
     mov x16, SYS_write
     mov x0, #1
     adr_l x1, buf
