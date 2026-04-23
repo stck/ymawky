@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global get
+.global put
 .global delete
 .align 4
 
@@ -216,20 +217,198 @@ Lunlink_failed:
     ;; just default to 500
     b reply_500
 
+;; write content to a file descriptor, retrying in case of partial-writes.
+;; input (same as write() syscall)
+;; x0 -> file descriptor
+;; x1 -> buffer
+;; x2 -> nbytes
+;;
+;; output
+;; x0 -> number of bytes written, total.
+write_all:
+    stp x25, x26, [sp, #-16]!
+    mov x25, x0 ; save x0 into x20
+    mov x26, #0
+    ; carry = 0, in case we exit with cbz without ever calling write().
+    adds xzr, xzr, xzr
+1:
+    cbz x2, 2f
+
+    mov x16, SYS_write
+    mov x0, x25
+    ; x1 is set by caller
+    ; x2 is also set by caller
+    svc #0x80
+    b.cs Lwrite_fail
+
+    sub x2, x2, x0 ; subtract written bytes
+    add x26, x26, x0 ; increment total bytes written
+    add x1, x1, x0 ; increment pointer
+    b 1b
+
+2:
+    mov x0, x26 ; return total bytes written
+
+    ldp x25, x26, [sp], #16
+    ret
+
+Lwrite_fail:
+    cmp x0, #EINTR
+    b.eq 1b
+
+    cmp xzr, xzr ; set C=1 so we can b.cs
+    b 2b
+
 ;; handle "PUT /" method.
 ;; input
 ;; x0 -> header
 ;; x1 -> length of header
 ;;
+;; uses from global registers
+;; x23 -> index after header end in buf, after \r\n\r\n
+;; x24 -> total bytes read. we can use this, along with content-length, to
+;;        determine if more read() calls are needed.
+;;
 ;; output
 ;; none, proc quits after handling.
 put:
+    stp x29, x30, [sp, #-64]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x25, x26, [sp, #48]
+
+    mov x19, #0 ; was file created? #0 = no, file existed, #1 = yes, new file
+    mov x21, x1
+    mov x22, x0
+
     bl do_path_checks
-    ldr_l x0, filename_str
 
+    mov x0, x22
+    mov x1, x21
     bl parse_content_length
+    b.cs Lpcl_error
+    mov x21, x0 ;; save content-length in x21
 
-    brk #1
+    ldr_l x0, filename_str
+    bl stat_path
+    b.cs Lput_stat_failed
+
+1:
+    ; open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    mov x16, SYS_open
+    ldr_l x0, filename_str
+    mov x1, #O_WRONLY
+    orr x1, x1, #O_CREAT
+    orr x1, x1, #O_TRUNC
+    mov x2, #0644 ; rw-r--r--
+    svc #0x80
+    ; TODO check errno in open() in case there are other errnos i should be
+    ; handling differently. for now just throw 500.
+    b.cs L500
+    mov x25, x0 ;; save fd into x25
+
+    sub x22, x24, x23 ; x22 = x24 - x23, body bytes sitting in buf after header
+
+    ;; write remaining body from buffer.
+    mov x0, x25
+    adr_l x1, buf
+    add x1, x1, x23
+    ;; get min(x22, x21). store in x2.
+    cmp x22, x21
+    csel x2, x22, x21, lo
+    bl write_all
+    b.cs L500
+    sub x21, x21, x0
+    cbz x21, Lput_done
+
+    mov x22, #BUF_SIZE ; from defs.S, 16KB
+Lput_readwrite_loop:
+    cbz x21, Lput_done
+    ;cmp x21, #0
+    ;b.le Lput_done
+
+    mov x16, SYS_read
+    ldr_l x0, clientfd
+    adr_l x1, buf
+    cmp x22, x21
+    csel x2, x22, x21, lo
+    svc #0x80
+    b.cs Lput_read_failed
+
+    ;; now x0 contains bytes read
+    mov x26, x0
+    sub x21, x21, x0
+
+    mov x2, x0
+    adr_l x1, buf
+    mov x0, x25
+    bl write_all
+    b.cs L500
+
+    ;; did we read 0 bytes? we're done if so. should this be b.lo? i'd like it
+    ;; to be less than or equal, but i believe lo is just less-than. maybe 2
+    ;; cmps? like cmp #0, b.eq, and b.lo? 
+    ;cmp x26, #0
+    ;b.le Lput_read_zero
+    cbz x26, Lput_read_zero
+
+    b Lput_readwrite_loop
+
+Lput_read_failed:
+    b reply_500
+
+;; if we read 0 bytes, check if we were actually done reading. if
+;; content-length bytes had not been read total, the client hung up in the
+;; middle. if that happens, check if we created a new file. if we did, unlink
+;; it so we don't have half-written garbage. BUTTTT unfortunately, if the file
+;; existed already, it'll still be overwritten -- we're not using a temporary
+;; file, and opening with O_TRUNC. oh well :shrug:
+Lput_read_zero:
+    cbnz x21, 3f
+
+    ;; yeah if content-length is actually 0 now, we're all good.
+    b Lput_done
+3:
+    cbz x19, 4f ; if no file was created, just reply 500
+    mov x16, SYS_unlink
+    ldr_l x0, filename_str
+    svc #0x80
+4:
+    b L500
+
+
+Lput_done:
+    cbnz x19, L201
+
+    b L204
+
+;; if stat failed due to ENOENT, that's fine -- just mark that the file doesn't
+;; exist yet. otherwise, branch to handle_stat_failed, which will branch to the
+;; relevant http response.
+Lput_stat_failed:
+bp1:
+    cmp x0, #ENOENT
+    b.ne 2f
+
+    ;; set x19 to 1 so we know a new file was created.
+    mov x19, #1
+    b 1b
+;; stat failed for some reason other than ENOENT.
+2:
+bp2:
+    b handle_stat_failed
+
+;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
+;; no content length was actually provided.
+Lpcl_error:
+    cmp x0, #1
+    b.eq L400
+    cmp x0, #0
+    b.eq L411
+
+    ;; should never reach here. but just in case!
+    b L500
+    
     ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
     ;; 1. open filename_str                                                 ;;
     ;; 2. check for errors opening                                          ;;
@@ -253,6 +432,13 @@ put:
     ;; 5. 500 Internal Server Error -- disk full, write() failed, other     ;;
     ;;    system errors.                                                    ;;
     ;;TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO TODO XXX XXX TODO;
+put_epilogue:
+    ldp x25, x26, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #64
+    b child_end
+
 
 ;; handle "GET /" method.
 ;; input
@@ -298,8 +484,9 @@ get:
 
     ;; if the file is 0 bytes long, let's skip the mmap and all that. just
     ;; close the file.
-    cmp x21, #0
-    b.le Lget_end
+    ;cmp x21, #0
+    ;b.le Lget_end
+    cbz x21, Lget_end
 
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
@@ -359,11 +546,15 @@ Lget_end:
 ;; i can't cmp xN, xN; b.eq reply_*, since reply_* are in other files. it's
 ;; too far for conditional branching. so, i've gotta have these private labels
 ;; so i can conditionally branch.
+L201: b reply_201
 L204: b reply_204
 L400: b reply_400
 L403: b reply_403
 L404: b reply_404
 L409: b reply_409
+L411: b reply_411
 L414: b reply_414
-L500: b reply_500
+L500:
+    brk #0
+    b reply_500
 L508: b reply_508

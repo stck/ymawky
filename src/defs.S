@@ -54,6 +54,7 @@
 .equ GET_REQ_ID,     1
 .equ OPTIONS_REQ_ID, 2
 .equ DELETE_REQ_ID,  3
+.equ PUT_REQ_ID,     4
 
 ;; stuff for file.S
 .equ S_IFREG,        0x8000
@@ -83,3 +84,10 @@
 .equ EHOSTUNREACH,   65
 .equ EAGAIN,         35
 .equ EINTR,          4
+
+;; oflags values for open()
+.equ O_RDONLY,       0x0000
+.equ O_WRONLY,       0x0001
+.equ O_RDRW,         0x0002
+.equ O_CREAT,        0x0200
+.equ O_TRUNC,        0x0400

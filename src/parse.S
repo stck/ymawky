@@ -14,7 +14,7 @@ header_end: .ascii "\r\n\r\n"
 .equ header_end_len, . - header_end
 
 content_len_match_str: .ascii "content-length"
-.equ content_len_match_len, . - content_len_match_str
+.equ content_len_match_len, 14
 
 www_prefix: .ascii "www/"
 .equ www_prefix_len, . - www_prefix
@@ -94,7 +94,6 @@ pcl_scan:
     ;; let's just make sure the sentinel isn't already set, as in, we haven't
     ;; already found a separate content-length header field, and this is a
     ;; duplicate.
-bp1:
     cmp x22, #-1
     b.ne pcl_malformed
 
@@ -160,7 +159,8 @@ Lgot_cl_len:
     mov x0, x19
     add x0, x0, x21
     ;; x1 is still set
-    bl atoi
+    bl atoi_n
+    b.cs pcl_malformed
 
     ;; now x0 should be the length!
     mov x22, x0
@@ -458,3 +458,5 @@ Lstreqn_match:
 Lstreqn_no_match:
     mov x0, #0
     ret
+
+L400: b reply_400

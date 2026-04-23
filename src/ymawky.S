@@ -40,6 +40,10 @@ get_req:
     .ascii "GET "
 .equ get_req_len, . - get_req
 
+put_req:
+    .ascii "PUT "
+.equ put_req_len, . - put_req
+
 head_req:
     .ascii "HEAD "
 .equ head_req_len, . - head_req
@@ -245,7 +249,8 @@ read_loop:
     b Lheader_found
 
 Lheader_found:
-    mov x8, x1 ;; save the location of the header
+    mov x23, x1 ;; end of header index (one byte after \r\n\r\n)
+    mov x24, x7 ;; total bytes
     b 2f ;; break from the hell of reading
 
 Lno_header:
@@ -293,11 +298,11 @@ L408:
     mov x2, #0
     svc #0x80
 
-    mov x0, x7 ;; restore x0 to be bytes-read
+    ;mov x0, x7 ;; restore x0 to be bytes-read
     ;; let's make sure buf is NULL terminated
     adr_l x1, buf
-    strb wzr, [x1, x0] ; x0 -> length of bytes read
-    mov x18, x0 ;; store length of buffer in x18
+    strb wzr, [x1, x24] ; x24 -> length of bytes read
+    ;mov x24, x0 ;; store length of buffer in x24
 
     ;; this just writes the request to stdout
     mov x2, x0
@@ -338,6 +343,14 @@ L408:
     cmp x0, #1
     b.eq Ldelete_method
 
+    ;; oh i know! PUT!
+    adr_l x0, buf
+    adr_l x1, put_req
+    mov x2, put_req_len
+    bl streqn
+    cmp x0, #1
+    b.eq Lput_method
+
     ;; if it was none, reply 501
     b reply_501
 
@@ -349,7 +362,7 @@ Lget_method:
 Lput_method:
     mov x20, PUT_REQ_ID
     adr_l x0, buf
-    mov x1, x18
+    mov x1, x23
     b put
     b child_end ; should never reach here, but just in case!
 
@@ -361,6 +374,7 @@ Lhead_method:
 Loptions_method:
     mov x20, OPTIONS_REQ_ID
     b reply_204 ;; reply_* always return to child_end
+    b child_end ; should never reach here, but just in case!
 
 Ldelete_method:
     mov x20, DELETE_REQ_ID

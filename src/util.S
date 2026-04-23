@@ -2,6 +2,7 @@
 
 .global itoa
 .global atoi
+.global atoi_n
 .global strlen
 .global memcpy
 
