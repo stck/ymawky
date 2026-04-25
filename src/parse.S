@@ -4,10 +4,14 @@
 .global parse_header_end
 .global parse_content_length
 .global streqn
+.global make_tmp_file
 .align 4
 
 ;; this is PATH_MAX
 .equ filename_buf_size, 4096
+;; (PATH_MAX + some extra bytes for tmp stuff)
+.equ filename_buf_tmp_size, filename_buf_size + 64
+;; accept files of up to 1GB for PUT. change this if you want larger files.
 .equ MAX_BODY_SIZE, 1024 * 1024 * 1024
 
 .data
@@ -23,12 +27,103 @@ www_prefix: .ascii "www/"
 default_file: .ascii "index.html"
 .equ default_file_len, . - default_file
 
+tmp_prefix: .ascii ".ymawky_tmp_"
+.equ tmp_prefix_len, . - tmp_prefix
+
 .bss
 ;; probably way too defensive, but can't hurt, eh?
 filename_buf: .skip filename_buf_size + 1
 .align 3 ;; fix broken alignment again
+filename_buf_tmp: .skip filename_buf_tmp_size + 1
+.align 3
 
 .text
+;; take a filename, and create a temporary file for PUT.
+;; eg, "test.txt" -> "test.txt.<pid>". then "test.txt.<pid>" gets written to,
+;; and on success, renamed to "test.txt", or unlinked on fail.
+;; input
+;; x0 -> filename
+;; x1 -> length of filename
+;;
+;; return
+;; x0 -> generated temporary filename
+;; x1 -> length of generated temporary filename
+make_tmp_file:
+    stp x29, x30, [sp, #-64]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
+
+    mov x23, #0
+    movz x24, #filename_buf_tmp_size
+
+    ;; preemptively increment the counter to account for the prefix
+    mov x22, #tmp_prefix_len
+    add x23, x23, x22
+    ;; quit if it's too big. we don't want to accidentally write into other
+    ;; memory
+    cmp x23, x24
+    b.hi mtf_err 
+
+    ;; copy tmp_prefix to filename_buf_tmp
+    adr_l x0, filename_buf_tmp
+    adr_l x1, tmp_prefix
+    mov x2, #tmp_prefix_len
+    bl memcpy
+    mov x21, x0 ; save pointer with offset from memcpy
+
+    ;; getpid()
+    mov x16, SYS_getpid
+    svc #0x80
+    ;; now x0 contains the pid
+
+    ;; itoa() on getpid()
+    bl itoa
+    ;; x0 -> string, x1 -> length of string
+    mov x22, x1
+
+    ;; preemptively increment the counter, and bounds check, for return once
+    ;; more
+    add x23, x23, x22
+    cmp x23, x24
+    b.hi mtf_err
+
+    ;; copy string of pid to the end of filename_buf_tmp
+    mov x2, x1
+    mov x1, x0
+    mov x0, x21 ; load pointer with offset
+    bl memcpy
+
+    ;; one last bounds check, preemptively, for the NULL terminator. then add
+    ;; it.
+    add x23, x23, #1
+    cmp x23, x24
+    b.hi mtf_err
+    strb wzr, [x0]
+
+    ;; load data for returning. make x0 a pointer to the start of
+    ;; filename_buf_tmp, and x1 the total length of the file (-1 to get rid of
+    ;; the NULL byte from length).
+    adr_l x0, filename_buf_tmp
+    sub x1, x23, #1
+
+    cmn xzr, xzr ; clear carry bit just in case! probably unneeded.
+    b mtf_epilogue
+
+mtf_err:
+    cmp xzr, xzr ; sets carry bit
+    ;; return NULLs
+    mov x0, #0
+    mov x1, #0
+    ;; fallthrough
+
+mtf_epilogue:
+    ldp x23, x24, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #64
+    ret
+
 ;; input
 ;; x0 -> HTTP header from client
 ;; x1 -> length of header

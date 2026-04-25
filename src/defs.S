@@ -34,6 +34,7 @@
 .equ SYS_close,      6
 .equ SYS_wait4,      7
 .equ SYS_unlink,     10
+.equ SYS_getpid,     20
 .equ SYS_accept,     30
 .equ SYS_munmap,     73
 .equ SYS_setitimer,  83
@@ -41,6 +42,7 @@
 .equ SYS_bind,       104
 .equ SYS_setsockopt, 105
 .equ SYS_listen,     106
+.equ SYS_rename,     128
 .equ SYS_shutdown,   134
 .equ SYS_mmap,       197
 .equ SYS_lseek,      199

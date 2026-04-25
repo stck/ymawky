@@ -23,6 +23,8 @@ good_response_tail:
 file_des:             .skip 8
 filename_str:         .skip 8
 filename_len:         .skip 8
+filename_tmp_str:     .skip 8
+filename_tmp_len:     .skip 8
 file_contents:        .skip 8
 file_length:          .skip 8
 content_length_str:   .skip 8
@@ -295,9 +297,17 @@ put:
     b.cs Lput_stat_failed
 
 1:
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
+    bl make_tmp_file
+    b.cs L500
+
+    str_l x0, filename_tmp_str
+    str_l x1, filename_tmp_len
+
     ; open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     mov x16, SYS_open
-    ldr_l x0, filename_str
+    ldr_l x0, filename_tmp_str
     mov x1, #O_WRONLY
     orr x1, x1, #O_CREAT
     orr x1, x1, #O_TRUNC
@@ -325,8 +335,6 @@ put:
     mov x22, #BUF_SIZE ; from defs.S, 16KB
 Lput_readwrite_loop:
     cbz x21, Lput_done
-    ;cmp x21, #0
-    ;b.le Lput_done
 
     mov x16, SYS_read
     ldr_l x0, clientfd
@@ -357,6 +365,15 @@ Lput_read_failed:
     cmp x0, #EAGAIN
     b.eq L408
 
+    ;; close and delete the temporary file
+    mov x16, SYS_close
+    mov x0, x25
+    svc #0x80
+
+    mov x16, SYS_unlink
+    ldr_l x0, filename_tmp_str
+    svc #0x80
+
     b reply_500
 
 ;; if we read 0 bytes, check if we were actually done reading. if
@@ -373,15 +390,24 @@ Lput_read_zero:
 3:
     cbz x19, 4f ; if no file was created, just reply 500
     mov x16, SYS_unlink
-    ldr_l x0, filename_str
+    ldr_l x0, filename_tmp_str
     svc #0x80
 4:
     b L400
 
 
 Lput_done:
-    cbnz x19, L201
+    mov x16, SYS_close
+    mov x0, x25
+    svc #0x80
 
+    mov x16, SYS_rename
+    ldr_l x0, filename_tmp_str
+    ldr_l x1, filename_str
+    svc #0x80
+    b.cs L500
+
+    cbnz x19, L201
     b L204
 
 ;; if stat failed due to ENOENT, that's fine -- just mark that the file doesn't
