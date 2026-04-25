@@ -144,7 +144,7 @@ do_path_checks:
 
     adr_l x0, buf
     bl parse_path
-    cbz x0, L400
+    b.cs Lpp_fail
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
@@ -162,6 +162,16 @@ do_path_checks:
 
     ldp x29, x30, [sp], #16
     ret
+
+Lpp_fail:
+    cbz x0, L400
+
+    cmp x0, #1
+    b.eq L403
+
+    ;; this shouldn't be possible -- x0 should either be only 0 or 1. if it's
+    ;; neither, something went wrong and it's my fault, personally.
+    b L500
 
 ;; handler function for stat64() failing. route to the proper HTTP reponse
 ;; based on errno.

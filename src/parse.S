@@ -21,13 +21,14 @@ header_end: .ascii "\r\n\r\n"
 content_len_match_str: .ascii "content-length"
 .equ content_len_match_len, 14
 
-www_prefix: .ascii "www/"
+www_prefix: default_dir ;; default_dir from defs.S
 .equ www_prefix_len, . - www_prefix
 
 default_file: .ascii "index.html"
 .equ default_file_len, . - default_file
 
-tmp_prefix: .ascii ".ymawky_tmp_"
+tmp_prefix: default_dir
+            .ascii ".ymawky_tmp_"
 .equ tmp_prefix_len, . - tmp_prefix
 
 .bss
@@ -307,7 +308,8 @@ pcl_epilogue:
 ;; clobbers x0, x1, x2, x3
 parse_path:
     ;; preserve link register so we can bl to other functions properly
-    stp x29, x30, [sp, #-16]!
+    stp x29, x30, [sp, #-32]!
+    stp x20, x21, [sp, #16]
     mov x1, #0
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
@@ -441,14 +443,49 @@ Lnot_get:
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
 Lno_match:
-    mov x0, #0
-    mov x1, #0
-    b Lparse_return
+    mov x20, #0
+    mov x21, #0
+    cmp xzr, xzr
+    b 1f
 
 Lparse_return:
+    cmn xzr, xzr ; clear carry by default -- might get set below.
+    mov x20, x0
+    mov x21, x1
+
+    ;; if the filename from parse_path is shorter than tmp_prefix_len, there's
+    ;; no way it could be a collision. so we can just return successfully.
+    mov x2, x1
+    mov x1, tmp_prefix_len
+    cmp x2, x1
+    b.lt 1f
+
+    ;; check if the filename from parse_path starts with our tmp_prefix, ie,
+    ;; www/.ymawky_tmp_<anything>. if it does, we should disallow that.
+    ; x0 is already set
+    adr_l x1, tmp_prefix
+    mov x2, tmp_prefix_len
+    bl streqn
+    cbz x0, 1f
+
+    ;; if we're here, it was a match. rip.
+    cmp xzr, xzr
+    ; x20 since we do mov x0, x20 immedately aftewords. with carry set, x0 will
+    ; indicate the error.
+    mov x20, #1
+
+1:
+    mov x0, x20
+    mov x1, x21
+
     ;; restore the link register and ret
-    ldp x29, x30, [sp], #16
+    ldp x20, x21, [sp, #16]
+    ldp x29, x30, [sp], #32
     ret
+
+Lfilename_issue:
+    cmp xzr, xzr ; set carry flag
+    b 1b
 
 ;; input
 ;; x0 -> string
