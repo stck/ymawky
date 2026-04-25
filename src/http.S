@@ -16,7 +16,7 @@ head_content_type:
 .equ head_content_type_len, . - head_content_type
 
 good_response_tail:
-    .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE\r\nServer: ymawky\r\n\r\n"
+    .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nServer: ymawky\r\n\r\n"
 .equ good_response_tail_len, . - good_response_tail
 
 .bss

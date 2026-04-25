@@ -56,6 +56,10 @@ delete_req:
     .ascii "DELETE "
 .equ delete_req_len, . - delete_req
 
+brew_req:
+    .ascii "BREW "
+.equ brew_req_len, . - brew_req
+
 .bss
 sockfd:             .skip 8
 
@@ -264,8 +268,6 @@ Lno_header:
 
     b read_loop
 
-L431:
-    b reply_431
 read_failed:
     ; if read was interrupted by a signal, retry instead of exiting. doesn't
     ; affect x7/buf offset.
@@ -285,8 +287,6 @@ read_failed:
     cb eq, x0, #EAGAIN, L408
 
     b reply_500
-L408:
-    b reply_408
 
 2:
     ;; disarm timer
@@ -347,7 +347,16 @@ L408:
     cmp x0, #1
     b.eq Lput_method
 
-    ;; if it was none, reply 501
+    ;; oh god. it's probably BREW. unfortunately, I'm a teapot, so we can't
+    ;; support that method.
+    adr_l x0, buf
+    adr_l x1, brew_req
+    mov x2, brew_req_len
+    bl streqn
+    cmp x0, #1
+    b.eq L418
+
+    ;; if it was none of the above, reply 501
     b reply_501
 
 Lget_method:
@@ -405,3 +414,7 @@ fatal_exit:
     mov x16, SYS_exit
     mov x0, #1
     svc #0x80
+
+L408: b reply_408
+L418: b reply_418
+L431: b reply_431

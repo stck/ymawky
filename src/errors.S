@@ -1,27 +1,20 @@
 #include "defs.S"
 
-;; XXX FIXME HACK
-;; man there's got to be a better way to do this lol
-;; maybe:
-;; mov x0, #404
-;; b send_reply
-;; ? send_reply takes http code as an argument, checks the value of x0, then
-;; builds the header based on that?
-
 .global reply_201
 .global reply_204
 .global reply_400
 .global reply_403
 .global reply_404
 .global reply_408
+.global reply_409
 .global reply_411
 .global reply_413
 .global reply_414
+.global reply_418
 .global reply_431
 .global reply_500
 .global reply_501
 .global reply_508
-.global reply_409
 
 .data
 header_201: .ascii "HTTP/1.1 201 Created"
@@ -53,6 +46,9 @@ header_413: .ascii "HTTP/1.1 413 Content Too Large"
 
 header_414: .ascii "HTTP/1.1 414 URI Too Long"
 .equ header_414_len, . - header_414
+
+header_418: .ascii "HTTP/1.1 418 I'm a teapot"
+.equ header_418_len, . - header_418
 
 header_431: .ascii "HTTP/1.1 431 Request Header Fields Too Large"
 .equ header_431_len, . - header_431
@@ -132,6 +128,11 @@ reply_413:
 reply_414:
     adr_l x3, header_414
     mov x4, header_414_len
+    b send_reply
+
+reply_418:
+    adr_l x3, header_418
+    mov x4, header_418_len
     b send_reply
 
 reply_431:
