@@ -347,29 +347,21 @@ Lchar_found:
 
     add x0, x0, #1 ;; skip past the '/' which we're currently on
 
-    ;; zero out x2, which is used as both an index into filename_buf and as a
-    ;; relative index (x2 + 4, to skip the starting "GET ") into the header
-    mov x2, #0
-
     ;; load in filename_buf to x1
     adr_l x1, filename_buf
 
-    mov x8, x3
-    mov x7, x2
-    mov x6, x1
-    mov x5, x0
-
-    mov x0, x6
+    ;; gotta save x0 and x1, since memcpy changes the pointers
+    stp x0, x1, [sp, #-16]!
+    mov x0, x1
     adr_l x1, www_prefix
     mov x2, www_prefix_len
     bl memcpy
+    ldp x0, x1, [sp], #16
 
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
+    ;; zero out x2, which is used as both an index into filename_buf and as a
+    ;; relative index (x2 + 4, to skip the starting "GET ") into the header
+    mov x2, #0
     mov x4, www_prefix_len
-
 Lfilename_loop:
     cmp x4, filename_buf_size ; bounds check
     b.ge Lno_match
@@ -449,7 +441,6 @@ Lno_match:
     b 1f
 
 Lparse_return:
-    cmn xzr, xzr ; clear carry by default -- might get set below.
     mov x20, x0
     mov x21, x1
 
@@ -466,6 +457,8 @@ Lparse_return:
     adr_l x1, tmp_prefix
     mov x2, tmp_prefix_len
     bl streqn
+
+    cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
     cbz x0, 1f
 
     ;; if we're here, it was a match. rip.
