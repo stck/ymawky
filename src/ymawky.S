@@ -132,11 +132,9 @@ skip_argv:
     mov x1, #5
     svc #0x80
     b.cs exit
-;; NOTE NOTE NOTE
-;; uncomment this line to debug with lldb.
-  ;b 1f
+
+    ;; debug flag check. skip past the fork stuff in x28 is set
     cbnz x28, 1f
-;; NOTE NOTE NOTE
 loop:
 ;; reap any dead child processes
 Lreap:

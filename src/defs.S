@@ -53,6 +53,7 @@
 .equ SYS_mmap,       197
 .equ SYS_lseek,      199
 .equ SYS_stat64,     338
+.equ SYS_fstat64,    339
 
 ;; constants
 .equ BUF_SIZE,       16384 ; number of bytes for read()

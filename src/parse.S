@@ -5,6 +5,8 @@
 .global parse_content_length
 .global streqn
 .global make_tmp_file
+.global tmp_prefix
+.global tmp_prefix_len_val
 .align 4
 
 ;; this is PATH_MAX
@@ -30,6 +32,8 @@ default_file: .ascii "index.html"
 tmp_prefix: default_dir
             .ascii ".ymawky_tmp_"
 .equ tmp_prefix_len, . - tmp_prefix
+.align 3
+tmp_prefix_len_val: .quad tmp_prefix_len
 
 .bss
 ;; probably way too defensive, but can't hurt, eh?
@@ -174,7 +178,6 @@ pcl_scan:
     cmp x3, #content_len_match_len
     b.lt pcl_done
 
-    ;ldr x0, [x19, x21]
     add x0, x19, x21
     adr_l x1, content_len_match_str
     mov x2, #content_len_match_len
@@ -435,50 +438,18 @@ Lnot_get:
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
 Lno_match:
-    mov x20, #0
-    mov x21, #0
+    mov x0, #0
+    mov x1, #0
     cmp xzr, xzr
     b 1f
 
 Lparse_return:
-    mov x20, x0
-    mov x21, x1
-
-    ;; if the filename from parse_path is shorter than tmp_prefix_len, there's
-    ;; no way it could be a collision. so we can just return successfully.
-    mov x2, x1
-    mov x1, tmp_prefix_len
-    cmp x2, x1
-    b.lt 1f
-
-    ;; check if the filename from parse_path starts with our tmp_prefix, ie,
-    ;; www/.ymawky_tmp_<anything>. if it does, we should disallow that.
-    ; x0 is already set
-    adr_l x1, tmp_prefix
-    mov x2, tmp_prefix_len
-    bl streqn
-
     cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
-    cbz x0, 1f
-
-    ;; if we're here, it was a match. rip.
-    cmp xzr, xzr
-    ; x20 since we do mov x0, x20 immedately aftewords. with carry set, x0 will
-    ; indicate the error.
-    mov x20, #1
-
 1:
-    mov x0, x20
-    mov x1, x21
-
     ;; restore the link register and ret
     ldp x20, x21, [sp, #16]
     ldp x29, x30, [sp], #32
     ret
-
-Lfilename_issue:
-    cmp xzr, xzr ; set carry flag
-    b 1b
 
 ;; input
 ;; x0 -> string

@@ -159,13 +159,30 @@ do_path_checks:
     ldr_l x1, filename_len
     bl check_path_traversal
     cbz x0, L400
+bp1:
 
+    ldr_l x0, filename_len
+    ldr_l x1, tmp_prefix_len_val
+    cmp x0, x1
+    b.lt 2f
+bp2:
+
+    ldr_l x0, filename_str
+    adr_l x1, tmp_prefix
+    ldr_l x2, tmp_prefix_len_val
+    bl streqn
+    cbnz x0, L403
+2:
     ldp x29, x30, [sp], #16
     ret
 
 Lpp_fail:
     cbz x0, L400
 
+    ;; TODO -- this check is reduntant. parse_path has a reduntant check if
+    ;; the path starts with .ymawky_tmp_*, but that's a mistake, since it
+    ;; could be encoded with %. so i've moved the check to this function, now
+    ;; it's unneeded in parse_path.
     cmp x0, #1
     b.eq L403
 
@@ -173,7 +190,7 @@ Lpp_fail:
     ;; neither, something went wrong and it's my fault, personally.
     b L500
 
-;; handler function for stat64() failing. route to the proper HTTP reponse
+;; handler function for fstat64() failing. route to the proper HTTP reponse
 ;; based on errno.
 ;; input
 ;; x0 -> errno
@@ -302,9 +319,6 @@ put:
     b.cs Lpcl_error
     mov x21, x0 ;; save content-length in x21
 
-    ldr_l x0, filename_str
-    bl stat_path
-    b.cs Lput_stat_failed
 
 1:
     ldr_l x0, filename_str
@@ -323,10 +337,14 @@ put:
     orr x1, x1, #O_TRUNC
     mov x2, #0644 ; rw-r--r--
     svc #0x80
-    ; TODO check errno in open() in case there are other errnos i should be
-    ; handling differently. for now just throw 500.
-    b.cs L500
+    ;; ironically i can just branch to the stat failed label for open(), since
+    ;; the errnos and their causes are largely the same.
+    b.cs Lput_stat_failed
     mov x25, x0 ;; save fd into x25
+
+    ;; x0 is already set
+    bl stat_fd
+    b.cs Lput_stat_failed
 
     sub x22, x24, x23 ; x22 = x24 - x23, body bytes sitting in buf after header
 
@@ -432,6 +450,17 @@ Lput_stat_failed:
     b 1b
 ;; stat failed for some reason other than ENOENT.
 2:
+    cbz x25, 3f
+
+    ;; save errno from fstat64() in x1.
+    mov x1, x0
+
+    mov x16, SYS_close
+    mov x0, x25
+    svc #0x80
+    ;; restore fstat64()'s errno, in case close() also had an error lol
+    mov x0, x1
+3:
     b handle_stat_failed
 
 ;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
@@ -465,13 +494,6 @@ get:
     bl do_path_checks
     ldr_l x0, filename_str
 
-    bl stat_path
-    cbnz x0, handle_stat_failed
-    cmp w1, #S_IFREG
-    b.ne L403
-
-    mov x21, x2 ; x2 should be file length from stat_path, store it in x21
-
     mov x16, SYS_open
     ldr_l x0, filename_str
     mov x1, #0 ; RDONLY
@@ -480,6 +502,13 @@ get:
 
     ;; save the file descriptor
     str_l x0, file_des
+
+    bl stat_fd
+    cbnz x0, handle_stat_failed
+    cmp w1, #S_IFREG
+    b.ne L403
+
+    mov x21, x2 ; x2 should be the file length from fstat64(). store it in x21
 
     bl write_header
 
@@ -499,8 +528,6 @@ get:
 
     ;; if the file is 0 bytes long, let's skip the mmap and all that. just
     ;; close the file.
-    ;cmp x21, #0
-    ;b.le Lget_end
     cbz x21, Lget_end
 
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)

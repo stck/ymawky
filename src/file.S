@@ -8,6 +8,7 @@
     .space 40 - (. - 9b)     ;; pad to offset 40 from entry start
 .endm
 
+.global stat_fd
 .global stat_path
 .global get_filetype
 .global check_path_traversal
@@ -44,9 +45,44 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 
 .text
 
-;; run stat64() on file at a given path, returning file size and type.
+;; run fstat64() on file descirptor, returning file size and type
 ;; input
-;; x0 -> filename path
+;; x0 -> file descriptor
+;;
+;; returns
+;; x0 -> 0 on success, otherwise, errno from stat64
+;; x1 -> file type
+;; x2 -> size
+stat_fd:
+    sub sp, sp, #160 ; reserve stack buffer (stat requires 144 bytes, round up)
+    mov x16, SYS_fstat64
+    ;; x0 is already set
+    mov x1, sp ; stat buffer, on the stack
+    svc #0x80
+    b.cs Lstat_fd_failed
+
+    ; read st_mode (halfword at offset 4 in stat buffer)
+    ; NOTE st_mode in struct stat64 is a mode_t (u16) inside the stat struct,
+    ; NOTE at offset 4. if that ever changes, look here!
+    ldrh w1, [sp, #4]
+    and w1, w1, #0xF000 ; mask S_IFMT
+    ldr x2, [sp, #96] ; load st_size into x2
+    mov x0, #0
+    b Lstat_fd_end
+
+Lstat_fd_failed:
+    ;; x0 is already errno. these two movs aren't strictly necessary, but i
+    ;; think it's nice to have it all zeroed out.
+    mov x1, #0
+    mov x2, #0
+    ; NOTE fallthrough to Lstat_end
+
+Lstat_fd_end:
+    add sp, sp, #160
+    ret
+;; run stat64() on file path, returning file size and type
+;; input
+;; x0 -> file path
 ;;
 ;; returns
 ;; x0 -> 0 on success, otherwise, errno from stat64
@@ -58,7 +94,7 @@ stat_path:
     ;; x0 is already set
     mov x1, sp ; stat buffer, on the stack
     svc #0x80
-    b.cs Lstat_failed
+    b.cs Lstat_path_failed
 
     ; read st_mode (halfword at offset 4 in stat buffer)
     ; NOTE st_mode in struct stat64 is a mode_t (u16) inside the stat struct,
@@ -67,16 +103,16 @@ stat_path:
     and w1, w1, #0xF000 ; mask S_IFMT
     ldr x2, [sp, #96] ; load st_size into x2
     mov x0, #0
-    b Lstat_end
+    b Lstat_path_end
 
-Lstat_failed:
+Lstat_path_failed:
     ;; x0 is already errno. these two movs aren't strictly necessary, but i
     ;; think it's nice to have it all zeroed out.
     mov x1, #0
     mov x2, #0
     ; NOTE fallthrough to Lstat_end
 
-Lstat_end:
+Lstat_path_end:
     add sp, sp, #160
     ret
 
