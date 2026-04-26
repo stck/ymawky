@@ -235,7 +235,8 @@ Lget_cl_len:
 
 Lgot_cl_len:
     ;; now x1 is the number of digits following "content-length:", after
-    ;; whitespace.
+    ;; whitespace. if it's 0, that means empty content length. bad!
+    cbz x1, pcl_malformed
     ;; but first, if the next character is *not* \r, then it means content
     ;; length has some string like "124afoo", which is invalid.
     cmp w2, #'\r'

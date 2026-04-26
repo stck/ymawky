@@ -333,6 +333,27 @@ put:
 
     bl do_path_checks
 
+    ldr_l x0, filename_str
+    bl stat_path
+    cbz x0, Ltarget_exists
+
+    cmp x0, #ENOENT
+    b.eq Ltarget_missing
+
+    b handle_fs_error
+
+Ltarget_exists:
+    cb ne, w1, #S_IFREG, L403
+
+    mov x19, #0
+    b 0f
+
+Ltarget_missing:
+    mov x19, #1
+    ;; fallthrough
+
+0:
+
     mov x0, x22
     mov x1, x21
     bl parse_content_length
@@ -395,7 +416,6 @@ put:
     ;; it_value.tv_sec member
     adr_l x0, put_read_timer
     str x2, [x0, #16] ;; offset 16 = it_value.tv_sec
-bp1:
 
     ;; call setitimer
     mov x16, SYS_setitimer
