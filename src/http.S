@@ -159,13 +159,11 @@ do_path_checks:
     ldr_l x1, filename_len
     bl check_path_traversal
     cbz x0, L400
-bp1:
 
     ldr_l x0, filename_len
     ldr_l x1, tmp_prefix_len_val
     cmp x0, x1
     b.lt 2f
-bp2:
 
     ldr_l x0, filename_str
     adr_l x1, tmp_prefix
@@ -197,11 +195,24 @@ Lpp_fail:
 ;;
 ;; output
 ;; none, branches to reply_* and quits.
-handle_stat_failed:
+handle_fs_error:
+    cb eq, x0, #ENAMETOOLONG, L414
+    cb eq, x0, #EINVAL, L400
+    ;; 403 since it's caused by O_NOFOLLOW_ANY most likely. if we ever allow
+    ;; symlinks, NOTE this should be 508.
+    cb eq, x0, #ELOOP, L403
+    cb eq, x0, #ENOTDIR, L404
     cb eq, x0, #ENOENT, L404
     cb eq, x0, #EACCES, L403
-    cb eq, x0, #ENAMETOOLONG, L414
-    cb eq, x0, #ELOOP, L508
+    cb eq, x0, #EPERM, L403
+    cb eq, x0, #EROFS, L403
+    cb eq, x0, #EISDIR, L403
+    cb eq, x0, #EFAULT, L500
+    cb eq, x0, #EBUSY, L409
+    cb eq, x0, #ENOTEMPTY, L409
+    cb eq, x0, #ENOSPC, L507
+    cb eq, x0, #EDQUOT, L507
+    cb eq, x0, #EFBIG, L413
 
     b reply_500
 
@@ -335,6 +346,7 @@ put:
     mov x1, #O_WRONLY
     orr x1, x1, #O_CREAT
     orr x1, x1, #O_TRUNC
+    orr x1, x1, #O_NOFOLLOW_ANY
     mov x2, #0644 ; rw-r--r--
     svc #0x80
     ;; ironically i can just branch to the stat failed label for open(), since
@@ -344,7 +356,7 @@ put:
 
     ;; x0 is already set
     bl stat_fd
-    b.cs Lput_stat_failed
+    cbnz x0, Lput_stat_failed
 
     sub x22, x24, x23 ; x22 = x24 - x23, body bytes sitting in buf after header
 
@@ -429,17 +441,20 @@ Lput_done:
     mov x0, x25
     svc #0x80
 
-    mov x16, SYS_rename
-    ldr_l x0, filename_tmp_str
-    ldr_l x1, filename_str
+    mov x16, SYS_renameatx_np
+    mov x0, #AT_FDCWD
+    ldr_l x1, filename_tmp_str
+    mov x2, #AT_FDCWD
+    ldr_l x3, filename_str
+    mov x4, #RENAME_NOFOLLOW_ANY
     svc #0x80
-    b.cs L500
+    b.cs handle_fs_error
 
     cbnz x19, L201
     b L204
 
 ;; if stat failed due to ENOENT, that's fine -- just mark that the file doesn't
-;; exist yet. otherwise, branch to handle_stat_failed, which will branch to the
+;; exist yet. otherwise, branch to handle_fs_error, which will branch to the
 ;; relevant http response.
 Lput_stat_failed:
     cmp x0, #ENOENT
@@ -461,7 +476,7 @@ Lput_stat_failed:
     ;; restore fstat64()'s errno, in case close() also had an error lol
     mov x0, x1
 3:
-    b handle_stat_failed
+    b handle_fs_error
 
 ;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
 ;; no content length was actually provided.
@@ -497,6 +512,7 @@ get:
     mov x16, SYS_open
     ldr_l x0, filename_str
     mov x1, #0 ; RDONLY
+    orr x1, x1, #O_NOFOLLOW_ANY
     svc #0x80
     b.cs L404 ; if the carry flag is set, open() failed so 404
 
@@ -504,7 +520,7 @@ get:
     str_l x0, file_des
 
     bl stat_fd
-    cbnz x0, handle_stat_failed
+    cbnz x0, handle_fs_error
     cmp w1, #S_IFREG
     b.ne L403
 
@@ -599,4 +615,5 @@ L411: b reply_411
 L413: b reply_413
 L414: b reply_414
 L500: b reply_500
+L507: b reply_507
 L508: b reply_508

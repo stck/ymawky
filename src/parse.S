@@ -247,9 +247,9 @@ Lgot_cl_len:
     cmp x0, x20
     b.ge pcl_malformed
 
-    ;; ensure x1 has a reasonable size to prevent overflows. 20 characters
-    cmp x1, #20
-    b.gt pcl_body_too_large
+    ;; ensure x1 has a reasonable size to prevent overflows. 18 characters
+    cmp x1, #18
+    b.ge pcl_body_too_large
 
     ;; load the string + pointer index into x0
     mov x0, x19

@@ -32,28 +32,29 @@
 .endm
 
 ;; syscalls
-.equ SYS_exit,       1
-.equ SYS_fork,       2
-.equ SYS_read,       3
-.equ SYS_write,      4
-.equ SYS_open,       5
-.equ SYS_close,      6
-.equ SYS_wait4,      7
-.equ SYS_unlink,     10
-.equ SYS_getpid,     20
-.equ SYS_accept,     30
-.equ SYS_munmap,     73
-.equ SYS_setitimer,  83
-.equ SYS_socket,     97
-.equ SYS_bind,       104
-.equ SYS_setsockopt, 105
-.equ SYS_listen,     106
-.equ SYS_rename,     128
-.equ SYS_shutdown,   134
-.equ SYS_mmap,       197
-.equ SYS_lseek,      199
-.equ SYS_stat64,     338
-.equ SYS_fstat64,    339
+.equ SYS_exit,         1
+.equ SYS_fork,         2
+.equ SYS_read,         3
+.equ SYS_write,        4
+.equ SYS_open,         5
+.equ SYS_close,        6
+.equ SYS_wait4,        7
+.equ SYS_unlink,       10
+.equ SYS_getpid,       20
+.equ SYS_accept,       30
+.equ SYS_munmap,       73
+.equ SYS_setitimer,    83
+.equ SYS_socket,       97
+.equ SYS_bind,         104
+.equ SYS_setsockopt,   105
+.equ SYS_listen,       106
+.equ SYS_rename,       128
+.equ SYS_shutdown,     134
+.equ SYS_mmap,         197
+.equ SYS_lseek,        199
+.equ SYS_stat64,       338
+.equ SYS_fstat64,      339
+.equ SYS_renameatx_np, 488
 
 ;; constants
 .equ BUF_SIZE,       16384 ; number of bytes for read()
@@ -93,6 +94,12 @@
 .equ EHOSTUNREACH,   65
 .equ EAGAIN,         35
 .equ EINTR,          4
+.equ EFBIG,          27
+.equ EDQUOT,         69 ; nice
+.equ ENOSPC,         28
+.equ ENOTEMPTY,      66
+.equ EINVAL,         22
+
 
 ;; oflags values for open()
 .equ O_RDONLY,       0x0000
@@ -100,3 +107,8 @@
 .equ O_RDRW,         0x0002
 .equ O_CREAT,        0x0200
 .equ O_TRUNC,        0x0400
+.equ O_NOFOLLOW_ANY, 0x20000000
+
+;; stuff for renameatx_np()
+.equ RENAME_NOFOLLOW_ANY, 0x00000010
+.equ AT_FDCWD, -2

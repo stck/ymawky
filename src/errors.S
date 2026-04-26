@@ -14,6 +14,7 @@
 .global reply_431
 .global reply_500
 .global reply_501
+.global reply_507
 .global reply_508
 
 .data
@@ -58,6 +59,9 @@ header_500: .ascii "HTTP/1.1 500 Internal Server Error"
 
 header_501: .ascii "HTTP/1.1 501 Not Implemented"
 .equ header_501_len, . - header_501
+
+header_507: .ascii "HTTP/1.1 507 Insufficient Storage"
+.equ header_507_len, . - header_507
 
 header_508: .ascii "HTTP/1.1 508 Loop Detected"
 .equ header_508_len, . - header_508
@@ -148,6 +152,11 @@ reply_500:
 reply_501:
     adr_l x3, header_501
     mov x4, header_501_len
+    b send_reply
+
+reply_507:
+    adr_l x3, header_507
+    mov x4, header_507_len
     b send_reply
 
 reply_508:
