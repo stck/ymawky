@@ -42,6 +42,7 @@
 .equ SYS_unlink,       10
 .equ SYS_getpid,       20
 .equ SYS_accept,       30
+.equ SYS_sigaction,    46
 .equ SYS_munmap,       73
 .equ SYS_setitimer,    83
 .equ SYS_socket,       97
@@ -100,6 +101,8 @@
 .equ ENOTEMPTY,      66
 .equ EINVAL,         22
 
+;; signals
+.equ SIGALRM,        14
 
 ;; oflags values for open()
 .equ O_RDONLY,       0x0000

@@ -4,6 +4,9 @@
 .global child_end
 .align 4
 
+;; How many seconds total for the header before timing out?
+.equ header_req_timeout_secs, 1
+
 .data
 .align 3
 rcv_timeout:
@@ -14,19 +17,14 @@ rcv_timeout:
 ;; from opening a connection and sending <1 byte/min or something, hogging
 ;; resources.
 .align 3
-read_timer_on:
+read_timer:
     .quad 0   ; it_interval.tv_sec
-    .quad 0   ; it_interval.tv_usec
-    .quad 30  ; it_value.tv_sec
-    .quad 0   ; it_value.tv_usec
+    .long 0   ; it_interval.tv_usec
+    .long 0   ; -- padding --
 
-;; disarm timer
-.align 3
-read_timer_off:
-    .quad 0
-    .quad 0
-    .quad 0
-    .quad 0
+    .quad 0   ; it_value.tv_sec
+    .long 0   ; it_value.tv_usec
+    .long 0   ; -- padding --
 
 one: .word 1
 
@@ -63,6 +61,7 @@ brew_req:
 .bss
 sockfd:             .skip 8
 
+.align 4
 .text
 _main:
     mov x28, #0
@@ -220,9 +219,30 @@ child:
     ;; arm timer before reading, 30 second total time to read
     mov x16, SYS_setitimer
     mov x0, #0 ; ITIMER_REAL
-    adr_l x1, read_timer_on
+    adr_l x1, read_timer
+    mov x2, #header_req_timeout_secs
+    str x2, [x1, #16] ; offset 16 = it_value.tv_sec
     mov x2, #0
     svc #0x80
+
+    ;; set a signal handler for SIGALRM, so we can respond with 408 if the
+    ;; connection times out during the header. see the long ass comment in
+    ;; http.S for a more detailed explanation of this, since it's extremely
+    ;; not-portable. macOS only. yuck. (it shouldn't be too hard to port to
+    ;; linux though).
+    sub sp, sp, #32
+    adr_l x0, handle_timeout
+    str x0, [sp, #0]  ; sa_handler
+    str x0, [sp, #8]   ; sp_tramp = 408 handler. see bigass comment above.
+    str xzr, [sp, #16] ; sa_mask = 0
+    ;str wzr, [sp, #20] ; sa_flags = 0
+    mov x16, SYS_sigaction
+    mov w0, #SIGALRM
+    mov x1, sp
+    mov x2, #0 ; old action = NULL
+fuck:
+    svc #0x80
+    b.cs L500
 
     ;; read(client_fd, buffer, buffer_size)
     mov x7, #0
@@ -282,7 +302,6 @@ read_failed:
     cb eq, x0, #ENETRESET, child_end
     cb eq, x0, #EHOSTDOWN, child_end
     cb eq, x0, #EHOSTUNREACH, child_end
-    cb eq, x0, #EAGAIN, L408
 
     b reply_500
 
@@ -290,7 +309,8 @@ read_failed:
     ;; disarm timer
     mov x16, SYS_setitimer
     mov x0, #0
-    adr_l x1, read_timer_off
+    adr_l x1, read_timer
+    str xzr, [x1, #16] ; offset 16 = it_value.tv_sec
     mov x2, #0
     svc #0x80
 
@@ -413,6 +433,7 @@ fatal_exit:
     mov x0, #1
     svc #0x80
 
-L408: b reply_408
+handle_timeout: b reply_408
 L418: b reply_418
 L431: b reply_431
+L500: b reply_500

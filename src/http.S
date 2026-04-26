@@ -5,8 +5,18 @@
 .global delete
 .align 4
 
-;; my god there has got to be a better way to handle this
 .data
+.align 3
+;; struct itimerval for setitimer()
+put_read_timer:
+    .quad 0 ; it_interval.tv_sec
+    .long 0 ; it_interval.tv_usec
+    .long 0 ; -- padding --
+
+    .quad 0 ; it_value.tv_sec
+    .long 0 ; it_value.tv_usec
+    .long 0 ; -- padding --
+
 head_response:
     .ascii "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
 .equ head_response_len, . - head_response
@@ -31,7 +41,6 @@ content_length_str:   .skip 8
 content_length_len:   .skip 8
 .equ header_buf_size, 512
 header_buf:           .skip header_buf_size
-
 
 .text
 ;; build a header, store it into header_buf, and then write it to the socket
@@ -372,6 +381,95 @@ put:
     sub x21, x21, x0
     cbz x21, Lput_done
 
+
+    ;; calculate a timeout for read to try and prevent slowloris-like attacks
+    ;; from slowly drip-drip-dripping content into a PUT and taking up
+    ;; resources.
+    ;; number of seconds = grace_period + content_length / min_bps
+    ;; 5s + content_length / 4kb/s
+    mov x1, #4096
+    udiv x2, x21, x1 ;; x2 = content_length / min_bps
+    add x2, x2, #5 ;; +5s grace
+
+    ;; write the number of seconds calculated to the itimerval struct in the
+    ;; it_value.tv_sec member
+    adr_l x0, put_read_timer
+    str x2, [x0, #16] ;; offset 16 = it_value.tv_sec
+bp1:
+
+    ;; call setitimer
+    mov x16, SYS_setitimer
+    mov x0, #0 ; ITIMER_REAL
+    adr_l x1, put_read_timer
+    mov x2, #0
+    svc #0x80
+
+    ;; now SIGALRM will occur after that period of time. we gotta catch it!
+    ;; NOTE sigaction is a bit odd on MacOS and different than Linux/POSIX.
+    ;; POSIX: (http://git.musl-libc.org/cgit/musl/tree/include/signal.h#n169)
+    ;;   struct sigaction {
+    ;;       union {
+    ;;           void (*sa_handler)(int);
+    ;;           void (*sa_sigaction)(int, siginfo_t *, void *);
+    ;;       } __sa_handler;
+    ;;       sigset_t sa_mask;
+    ;;       int sa_flags;
+    ;;       void (*sa_restorer)(void);
+    ;;   };
+    ;;
+    ;; Darwin: (https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/bsd/sys/signal.h#L374-L379)
+    ;;   struct  __sigaction {
+    ;;     union __sigaction_u __sigaction_u;
+    ;;	   void    (*sa_tramp)(void *, int, int, siginfo_t *, void *);
+    ;;	   sigset_t sa_mask;
+    ;;	   int     sa_flags;
+    ;;   };
+    ;; In POSIX systems, the kernel jumps directly to the handler. In Darwin
+    ;; (MacOS), the kernel jumps first to sa_tramp. This is usually handled by
+    ;; libc -- sa_tramp is responsible for calling your handler and then
+    ;; executing the sigreturn syscall, which restores the thread's previous
+    ;; state: registers, pc, sp, etc.
+    ;; The sigaction syscall in Darwin requires this struct, including the
+    ;; sa_tramp member. Since we aren't gonna be using libc, we can actually
+    ;; do something kind of cool and instead use sa_tramp *as* the handler
+    ;; itself, branching to 408 (Request Timeout).
+    ;; We have to ensure that bytes 0-7 are not 0 or 1, however.
+    ;; in bsd/kern/kern_sig.c, setsigvec() checks sa->sa_handler against a few
+    ;; values. If sa_handler (bytes 0-7) is SIG_IGN (1LL), the signal is
+    ;; ignored. If it's SIG_DFL (0LL), the program terminates by default.
+    ;; If it's anything else, sa_tramp is executed which does kernel shit and
+    ;; then executes the code sa_handler is pointing to, typically. In my code
+    ;; though, it just does the handling itself.
+    ;; https://github.com/opensource-apple/xnu/blob/0a798f6738bc1db01281fc08ae024145e84df927/bsd/kern/kern_sig.c#L643
+    ;; HOWEVER!! Since we never call sigreturn or sigprocmask, and sp gets
+    ;; fucked, we can never actually return to the main loop. if we do it
+    ;; like this. Since a signal is blocked while it's being handled, SIGALRM
+    ;; will be permanently blocked for the rest of this process's life, and it
+    ;; won't fire again.
+    ;; But that's really fine, if you think about it, since 408 sends the code
+    ;; and closes clientfd, then exits. So it's not a problem. But something
+    ;; to keep in mind.
+    ;;
+    ;; TL;DR: sigaction works differently in MacOS than Linux. this is janky
+    ;; as fuck and hacky but also perfectly fine and good.
+    ;; if you ever want to port ymawky to other systems, this is gonna be a
+    ;; major difference.
+    ;; set up the __sigaction struct
+    adr_l x0, Lput_sigalrm_handler
+    str x0, [sp, #0]  ; sa_handler
+    str x0, [sp, #8]   ; sp_tramp = 408 handler. see bigass comment above.
+    str wzr, [sp, #16] ; sa_mask = 0
+    str wzr, [sp, #20] ; sa_flags = 0
+    mov x16, SYS_sigaction
+    mov w0, #SIGALRM
+    mov x1, sp
+    mov x2, #0 ; old action = NULL
+    svc #0x80
+    ;; if sigaction fails, it's due to some memory issue. that should always
+    ;; be a 500. i don't want to just silently fail and let any connections go
+    ;; un-timedout, so just throw a 500 and take the shit.
+    b.cs L500
+
     mov x22, #BUF_SIZE ; from defs.S, 16KB
 Lput_readwrite_loop:
     cbz x21, Lput_done
@@ -404,7 +502,8 @@ Lput_readwrite_loop:
 Lput_read_failed:
     cmp x0, #EAGAIN
     b.eq L408
-
+    ;; fallthrough
+Lput_close_and_500:
     ;; close and delete the temporary file
     mov x16, SYS_close
     mov x0, x25
@@ -416,19 +515,28 @@ Lput_read_failed:
 
     b reply_500
 
+Lput_sigalrm_handler:
+    mov x16, SYS_close
+    mov x0, x25
+    svc #0x80
+
+    mov x16, SYS_unlink
+    ldr_l x0, filename_tmp_str
+    svc #0x80
+
+    b reply_408
+
 ;; if we read 0 bytes, check if we were actually done reading. if
 ;; content-length bytes had not been read total, the client hung up in the
 ;; middle. if that happens, check if we created a new file. if we did, unlink
-;; it so we don't have half-written garbage. BUTTTT unfortunately, if the file
-;; existed already, it'll still be overwritten -- we're not using a temporary
-;; file, and opening with O_TRUNC. oh well :shrug:
+;; it so we don't have half-written garbage.
 Lput_read_zero:
     cbnz x21, 3f
 
     ;; yeah if content-length is actually 0 now, we're all good.
     b Lput_done
 3:
-    cbz x19, 4f ; if no file was created, just reply 500
+    cbz x19, 4f ; if no file was created, just reply 400
     mov x16, SYS_unlink
     ldr_l x0, filename_tmp_str
     svc #0x80
