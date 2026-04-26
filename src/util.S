@@ -51,7 +51,13 @@ itoa:
 atoi:
     mov x1, #0
     mov x3, #10
+    mov x4, #0
 1:
+    ;; bounds check so we don't try to atoi a massive integer and overflow the
+    ;; register.
+    cmp x4, #19
+    b.hs Latoi_error
+
     ldrb w2, [x0]
     cbz w2, 2f
 
@@ -65,15 +71,16 @@ atoi:
     sub w2, w2, #'0'
     add x1, x1, x2
     add x0, x0, #1
+    add x4, x4, #1 ; increment counter for bounds check
+
     b 1b
 2:
+    cmn xzr, xzr
     mov x0, x1
     ret
 
 Latoi_error:
-    mrs x4, NZCV
-    orr x4, x4, #0x20000000 ; set carry bit
-    msr NZCV, x4
+    cmp xzr, xzr
     mov x0, #0
     ret
 
@@ -86,6 +93,11 @@ Latoi_error:
 ;; returns
 ;; x0 -> integer representation of string
 atoi_n:
+    ;; try to protect against overflowers. a 19+ digit number will overflow
+    ;; the register.
+    cmp x1, #19
+    b.hs Latoi_n_error
+
     mov x2, #0
     mov x4, #10
 2:
@@ -107,13 +119,12 @@ atoi_n:
     sub x1, x1, #1
     b 2b
 3:
+    cmn xzr, xzr
     mov x0, x2
     ret
 
 Latoi_n_error:
-    mrs x5, NZCV
-    orr x5, x5, #0x20000000 ; set carry bit
-    msr NZCV, x5
+    cmp xzr, xzr
     mov x0, #0
     ret
 
