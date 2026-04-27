@@ -240,7 +240,6 @@ child:
     mov w0, #SIGALRM
     mov x1, sp
     mov x2, #0 ; old action = NULL
-fuck:
     svc #0x80
     b.cs L500
 
