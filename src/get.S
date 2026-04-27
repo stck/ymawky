@@ -5,6 +5,7 @@
 #include "defs.S"
 
 .global get
+.global head
 
 .data
 .align 3
@@ -33,13 +34,15 @@ header_buf:  .skip header_buf_size
 ;; build a header, store it into header_buf, and then write it to the socket
 ;; in a loop, accounting for partial-writes.
 ;; input
-;; none i believe, it uses data in .bss
+;; x0 -> file length
 ;;
 ;; output
 ;; x0 -> 0 on success, 1 if write() failed, 2 if resulting header would be
 ;;       too large.
 write_header:
-    stp x29, x30, [sp, #-16]!
+    stp x29, x30, [sp, #-32]!
+    str x20, [sp, #16]
+    mov x20, x0
 
     adr_l x13, header_buf
     mov x14, #0 ; counter of bytes writteen to header_buf
@@ -54,9 +57,7 @@ write_header:
     bl memcpy
     mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
 
-    ;; get file-length (stored in x21 register in get, which is hack-y.
-    ;; fixme in the future!!
-    mov x0, x21
+    mov x0, x20
     bl itoa
 
     ;; copy content-length string into header_buf
@@ -118,25 +119,33 @@ Lhead_write_loop:
 
 Lhead_write_done:
     mov x0, #0
-    b 1f
+    b Lhw_epilogue
 Lhead_write_failed:
     mov x0, #1
-    b 1f
+    b Lhw_epilogue
 Lheader_too_big:
     mov x0, #2
-    b 1f
-1:
-    ldp x29, x30, [sp], #16
+    b Lhw_epilogue
+
+Lhw_epilogue:
+    ldr x20, [sp, #16]
+    ldp x29, x30, [sp], #32
     ret
 
 
-;; handle "GET /" method.
-;; input
+;; setup for the "GET" and "HEAD" methods. pretty much just writes the header
+;; after getting content length and such.
 ;; none, uses .bss data
 ;;
 ;; output
-;; none, proc quits after handling.
-get:
+;; x0 -> length of file
+;; NOTE this function opens a file and doesn't close it -- it saves the open
+;; file descriptor in .bss, file_des. be sure to close it!
+get_setup:
+    stp x29, x30, [sp, #-32]!
+    str x20, [sp, #16]
+
+    mov x0, #1 ;; yes, default to index.html if no file is given
     bl do_path_checks
     ldr_l x0, filename_str
 
@@ -155,8 +164,9 @@ get:
     cmp w1, #S_IFREG
     b.ne L403
 
-    mov x21, x2 ; x2 should be the file length from fstat64(). store it in x21
-
+    ; x2 should be the file length from fstat64(). store it in x20
+    mov x0, x2
+    mov x20, x2
     bl write_header
 
     ;; if write_header returned 2, that means header was too large for some
@@ -165,22 +175,52 @@ get:
     b.eq L500
     ;; otherwise if it's 1, that means a write failed somewhere. just give up
     cmp x0, #1
-    b.eq Lget_end ; wire broke :(
-    ;; if it returned 0 it's good :3
+    b.eq Lgs_end ; wire broke :(
 
-    ;; if it's a HEAD request, we just want to output the header, which we've
-    ;; done, so jump to the end
-    cmp x20, HEAD_REQ_ID
-    b.eq Lget_end
+    ;; if it returned 0 it's good :3
+    b Lgs_epilogue
+
+Lgs_end:
+    mov x16, SYS_close
+    ldr_l x0, file_des
+    svc #0x80
+    b child_end
+
+Lgs_epilogue:
+    mov x0, x20
+
+    ldr x20, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
+
+
+;; for HEAD, reply with just the header. pretty short n sweet.
+head:
+    bl get_setup ;; this does basically everything we want.
+
+    ;; we really just gotta close the file and exit
+    mov x16, SYS_close
+    ldr_l x0, file_des
+    svc #0x80
+    b child_end
+
+
+;; do the "GET /" stuff."
+get:
+    bl get_setup
 
     ;; if the file is 0 bytes long, let's skip the mmap and all that. just
-    ;; close the file.
-    cbz x21, Lget_end
+    ;; close the file. x0 from get_setup
+    cbz x0, Lget_end
+
+    ;; let's save file length into x13! please? we need to use it but only in
+    ;; this func -- i really don't wanna do more stack shit here...
+    mov x13, x0
 
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
     mov x0, #0
-    mov x1, x21
+    mov x1, x13
     mov x2, #1 ; PROT_READ
     mov x3, #2 ; MAP_PRIVATE
     ldr_l x4, file_des ; file descriptor
@@ -193,9 +233,9 @@ get:
     mov x12, x0
 
     ;; x12 -> pointer to mmap'd memory
-    ;; x21 -> total length of file
+    ;; x13 -> total length of file
     mov x10, x12  ; current position
-    mov x11, x21 ; remaining bytes
+    mov x11, x13 ; remaining bytes
 Lwrite_loop:
     ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
     ;; loop.
@@ -218,7 +258,7 @@ Lwrite_loop:
 Lwrite_done:
     mov x16, SYS_munmap
     mov x0, x12
-    mov x1, x21
+    mov x1, x13
     svc #0x80
     ;; if munmap fails, b.cs would just branch to Lget_end anyway. so just
     ;; fall through either way.

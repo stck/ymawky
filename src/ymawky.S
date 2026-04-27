@@ -242,8 +242,9 @@ child:
     adr_l x0, L408
     str x0, [sp, #0]  ; sa_handler
     str x0, [sp, #8]   ; sp_tramp = 408 handler. see bigass comment above.
-    str xzr, [sp, #16] ; sa_mask = 0
-    ;str wzr, [sp, #20] ; sa_flags = 0
+    str wzr, [sp, #16] ; sa_mask = 0
+    str wzr, [sp, #20] ; sa_flags = 0
+
     mov x16, SYS_sigaction
     mov w0, #SIGALRM
     mov x1, sp
@@ -385,29 +386,30 @@ read_failed:
     b reply_501
 
 Lget_method:
-    mov x20, GET_REQ_ID
+    ;mov x20, GET_REQ_ID
     b get
     b child_end ; should never reach here, but just in case!
 
 Lput_method:
-    mov x20, PUT_REQ_ID
+    ;mov x20, PUT_REQ_ID
     adr_l x0, buf
     mov x1, x23
+    mov x2, x24
     b put
     b child_end ; should never reach here, but just in case!
 
 Lhead_method:
-    mov x20, HEAD_REQ_ID
-    b get
+    ;mov x20, HEAD_REQ_ID
+    b head
     b child_end ; should never reach here, but just in case!
 
 Loptions_method:
-    mov x20, OPTIONS_REQ_ID
+    ;mov x20, OPTIONS_REQ_ID
     b reply_204 ;; reply_* always return to child_end
     b child_end ; should never reach here, but just in case!
 
 Ldelete_method:
-    mov x20, DELETE_REQ_ID
+    ;mov x20, DELETE_REQ_ID
     b delete
     b child_end ; should never reach here, but just in case!
 

@@ -171,6 +171,7 @@ reply_508:
     mov x4, header_508_len
     b send_reply
 
+
 ;; input
 ;; x3 -> header string
 ;; x4 -> header length
@@ -207,6 +208,7 @@ send_reply:
     svc #0x80
 
     b child_end
+
 
 ;; handler function for fstat64() failing. route to the proper HTTP reponse
 ;; based on errno.

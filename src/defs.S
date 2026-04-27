@@ -61,11 +61,11 @@
 .equ BUF_SIZE,       16384 ; number of bytes for read()
 
 ;; request type ids
-.equ HEAD_REQ_ID,    0
-.equ GET_REQ_ID,     1
-.equ OPTIONS_REQ_ID, 2
-.equ DELETE_REQ_ID,  3
-.equ PUT_REQ_ID,     4
+;.equ HEAD_REQ_ID,    0
+;.equ GET_REQ_ID,     1
+;.equ OPTIONS_REQ_ID, 2
+;.equ DELETE_REQ_ID,  3
+;.equ PUT_REQ_ID,     4
 
 ;; stuff for file.S
 .equ S_IFREG,        0x8000

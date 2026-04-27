@@ -74,24 +74,24 @@ Lwrite_fail:
 ;; input
 ;; x0 -> header
 ;; x1 -> length of header
-;;
-;; uses from global registers
-;; x23 -> index after header end in buf, after \r\n\r\n
-;; x24 -> total bytes read. we can use this, along with content-length, to
-;;        determine if more read() calls are needed.
+;; x2 -> total bytes read
 ;;
 ;; output
 ;; none, proc quits after handling.
 put:
-    stp x29, x30, [sp, #-64]!
+    stp x29, x30, [sp, #-80]!
     stp x19, x20, [sp, #16]
     stp x21, x22, [sp, #32]
-    stp x25, x26, [sp, #48]
+    stp x23, x24, [sp, #48]
+    stp x25, x26, [sp, #64]
 
     mov x19, #0 ; was file created? #0 = no, file existed, #1 = yes, new file
     mov x21, x1
     mov x22, x0
+    mov x23, x1
+    mov x24, x2
 
+    mov x0, #0 ;; do not default to index.html
     bl do_path_checks
 
     ldr_l x0, filename_str
@@ -112,15 +112,12 @@ Ltarget_exists:
 Ltarget_missing:
     mov x19, #1
     ;; fallthrough
-
 0:
-
     mov x0, x22
     mov x1, x21
     bl parse_content_length
     b.cs Lpcl_error
     mov x21, x0 ;; save content-length in x21
-
 
 1:
     ldr_l x0, filename_str
@@ -317,11 +314,16 @@ Lput_read_zero:
     ;; yeah if content-length is actually 0 now, we're all good.
     b Lput_done
 3:
+    mov x16, SYS_close
+    mov x0, x25
+    svc #0x80
+
     cbz x19, 4f ; if no file was created, just reply 400
     mov x16, SYS_unlink
     ldr_l x0, filename_tmp_str
     svc #0x80
 4:
+bp1:
     b L400
 
 Lput_done:
@@ -341,18 +343,9 @@ Lput_done:
     cbnz x19, L201
     b L204
 
-;; if stat failed due to ENOENT, that's fine -- just mark that the file doesn't
-;; exist yet. otherwise, branch to handle_fs_error, which will branch to the
-;; relevant http response.
+;; if stat failed, let's close the temp file (if opened) and then branch to
+;; handle_fs_error(errors.S) which will give the relevant HTTP code.
 Lput_stat_failed:
-    cmp x0, #ENOENT
-    b.ne 2f
-
-    ;; set x19 to 1 so we know a new file was created.
-    mov x19, #1
-    b 1b
-;; stat failed for some reason other than ENOENT.
-2:
     cbz x25, 3f
 
     ;; save errno from fstat64() in x1.
@@ -369,6 +362,7 @@ Lput_stat_failed:
 ;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
 ;; no content length was actually provided.
 Lpcl_error:
+bp2:
     cmp x0, #1
     b.eq L400
     cmp x0, #0
@@ -380,17 +374,20 @@ Lpcl_error:
     b L500
 
 put_epilogue:
-    ldp x25, x26, [sp, #48]
+    ldp x25, x26, [sp, #64]
+    ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #64
+    ldp x29, x30, [sp], #80
     b child_end
 
 
 ;; trampolines for conditional branches across files.
 L201: b reply_201
 L204: b reply_204
-L400: b reply_400
+bp3:
+L400:
+    b reply_400
 L403: b reply_403
 L408: b reply_408
 L411: b reply_411

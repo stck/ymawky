@@ -310,7 +310,8 @@ Lreturn:
 ;; x0 -> decoded string (decoded in-place)
 ;; x1 -> length of decoded string
 decode_url:
-    stp x29, x30, [sp, #-16]!
+    stp x29, x30, [sp, #-32]!
+    str x20, [sp, #16]
     mov x2, x0 ; write pointer
     mov x3, #0 ;; x3 is length of new string
 
@@ -341,11 +342,15 @@ Lencoded_char:
     ;; high nibble
     ldrb w4, [x0, #1]
     bl hex_to_val
+    cbnz x20, Lbad_end
+
     lsl w5, w4, #4 ; stash in w5
 
     ;; low nibble
     ldrb w4, [x0, #2]
     bl hex_to_val
+    cbnz x20, Lbad_end
+
     orr w4, w5, w4 ; combine w5 (high nibble) with w4 (low nibble)
 
     cmp w4, #0
@@ -366,31 +371,39 @@ hex_to_val:
     orr w4, w4, #0x20
 
     cmp w4, #'0'
-    b.lt Lbad_end
+    b.lt 2f
     cmp w4, #'9'
     b.le 1f
 
     cmp w4, #'a'
-    b.lt Lbad_end
+    b.lt 2f
     cmp w4, #'f'
-    b.gt Lbad_end
+    b.gt 2f
 
+    mov x20, #0
     sub w4, w4, #'a' - 10
     ret
 1:
+    mov x20, #0
     sub w4, w4, #'0'
+    ret
+2:
+    mov x20, #1
     ret
 
 Ldecode_end:
-    ldp x29, x30, [sp], #16
     mov x0, x2
     mov x1, x3
 
     strb wzr, [x0, x1] ;; null terminate decoded string
-    ret
+    b Ldecode_epilogue
 
 Lbad_end:
-    ldp x29, x30, [sp], #16
     mov x0, #0
     mov x1, #0
+    b Ldecode_epilogue
+
+Ldecode_epilogue:
+    ldr x20, [sp, #16]
+    ldp x29, x30, [sp], #32
     ret

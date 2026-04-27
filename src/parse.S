@@ -310,6 +310,8 @@ pcl_epilogue:
 
 ;; input
 ;; x0 -> HTTP header from client ("GET /...")
+;; x1 -> boolean, if 1/true, default to "index.html" default filename. if
+;;       0/false, do not give a default filename.
 ;; 
 ;; return
 ;; x0 -> string containing requested file name
@@ -320,6 +322,8 @@ parse_path:
     ;; preserve link register so we can bl to other functions properly
     stp x29, x30, [sp, #-32]!
     stp x20, x21, [sp, #16]
+    mov x20, x1 ;; save bool option in x20.
+
     mov x1, #0
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
@@ -413,14 +417,13 @@ Lempty_filename:
     ; the default file name, "index.html", is only for GET requests. if it's a
     ; DELETE/PUT/POST/anything else, just "www/" is enough. we'll let the
     ; system handle the error elsewhere if it causes problems.
-    cmp x20, GET_REQ_ID
-    b.eq 1f
-    cmp x20, HEAD_REQ_ID
-    b.eq 1f
+    ;cmp x20, HEAD_REQ_ID
+    ;b.eq 1f
+    cbz x20, Lno_default_file
 
-    b Lnot_get
+    ;b Lno_default_file
 
-1:
+;1:
     adr_l x0, filename_buf
     ;; skip past the www/
     add x0, x0, x2
@@ -437,7 +440,7 @@ Lempty_filename:
     add x1, x1, x2
 
     b Lparse_return
-Lnot_get:
+Lno_default_file:
     mov x0, x5
     mov x1, www_prefix_len
     b Lparse_return
@@ -581,13 +584,16 @@ Lstreqn_no_match:
 
 ;; decode hex/safety check/traversal check for a given path.
 ;; input
-;; none, uses data from .bss
+;; x0 -> boolean for parse_path, should a default file be provided if none is
+;;       given? 0/false, no default (PUT, DELETE). 1/true, yes default to
+;;       index.html (GET, HEAD)
 ;;
 ;; output
 ;; none -- responds with 400 or other error codes if needed.
 do_path_checks:
     stp x29, x30, [sp, #-16]!
 
+    mov x1, x0
     adr_l x0, buf
     bl parse_path
     b.cs Lpp_fail

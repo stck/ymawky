@@ -15,6 +15,7 @@
 ;; output
 ;; none, replies either 204 or some error code and quits.
 delete:
+    mov x0, #0 ;; do not default to index.html. do_paths_check argument
     bl do_path_checks
     ldr_l x0, filename_str
 
@@ -49,6 +50,7 @@ Lunlink_failed:
 
     ;; just default to 500
     b reply_500
+
 
 ;; trampolines for conditional branches across files.
 L204: b reply_204
