@@ -1,3 +1,6 @@
+;; util.S
+;; small generic helpers: itoa, atoi, atoi_n, memcpy, strlen.
+
 #include "defs.S"
 
 .global itoa
@@ -6,13 +9,12 @@
 .global strlen
 .global memcpy
 
-.align 4
-
 .bss
+;; itoa_buf is byte-addressed (strb/ldrb), so no special alignment needed.
 itoa_buf: .skip 20
-.align 3
 
 .text
+.align 2 ;; instructions need 4-byte alignment
 
 ;; convert integer into non-NULL-terminated string.
 ;; input
@@ -41,6 +43,7 @@ itoa:
     mov x0, x1 ; x0 = pointer to start
     mov x1, x2 ; x1 = length
     ret
+
 
 ;; convert NULL-terminated string to integer
 ;; input
@@ -83,6 +86,7 @@ Latoi_error:
     cmp xzr, xzr
     mov x0, #0
     ret
+
 
 ;; convert string representation of number into an integer. read up to N bytes
 ;; from string, does not need to be NULL terminated.
@@ -128,6 +132,7 @@ Latoi_n_error:
     mov x0, #0
     ret
 
+
 ;; copies N bytes from x1 into x0
 ;; input
 ;; x0 -> destination
@@ -146,6 +151,7 @@ memcpy:
 
 1:
     ret
+
 
 ;; gets the length of a NULL-terminated string.
 ;; input

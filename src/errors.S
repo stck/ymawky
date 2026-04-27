@@ -1,3 +1,7 @@
+;; errors.S
+;; HTTP error/status response handlers, plus errno -> HTTP code routing
+;; (handle_fs_error).
+
 #include "defs.S"
 
 .global reply_201
@@ -16,6 +20,7 @@
 .global reply_501
 .global reply_507
 .global reply_508
+.global handle_fs_error
 
 .data
 header_201: .ascii "HTTP/1.1 201 Created"
@@ -72,6 +77,8 @@ header_tail:
 
 
 .text
+.align 2
+
 reply_201:
     adr_l x3, header_201
     mov x4, header_201_len
@@ -200,3 +207,31 @@ send_reply:
     svc #0x80
 
     b child_end
+
+;; handler function for fstat64() failing. route to the proper HTTP reponse
+;; based on errno.
+;; input
+;; x0 -> errno
+;;
+;; output
+;; none, branches to reply_* and quits.
+handle_fs_error:
+    cb eq, x0, #ENAMETOOLONG, reply_414
+    cb eq, x0, #EINVAL, reply_400
+    ;; 403 since it's caused by O_NOFOLLOW_ANY most likely. if we ever allow
+    ;; symlinks, NOTE this should be 508.
+    cb eq, x0, #ELOOP, reply_403
+    cb eq, x0, #ENOTDIR, reply_404
+    cb eq, x0, #ENOENT, reply_404
+    cb eq, x0, #EACCES, reply_403
+    cb eq, x0, #EPERM, reply_403
+    cb eq, x0, #EROFS, reply_403
+    cb eq, x0, #EISDIR, reply_403
+    cb eq, x0, #EFAULT, reply_500
+    cb eq, x0, #EBUSY, reply_409
+    cb eq, x0, #ENOTEMPTY, reply_409
+    cb eq, x0, #ENOSPC, reply_507
+    cb eq, x0, #EDQUOT, reply_507
+    cb eq, x0, #EFBIG, reply_413
+
+    b reply_500

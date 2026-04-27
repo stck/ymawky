@@ -1,11 +1,15 @@
+;; file.S
+;; filesystem ops: stat, path safety / traversal checks, URL decoding,
+;; file extension -> MIME type lookup.
+
 #include "defs.S"
 
 .macro mime_entry ext, mime
-9:
+99:
     .asciz "\ext"
-    .space 8 - (. - 9b)      ;; ヽ(o＾▽＾o)ノ pad to offset 8 from entry start
+    .space 8 - (. - 99b)  ;; pad to offset 8 from entry start
     .asciz "\mime"
-    .space 40 - (. - 9b)     ;; pad to offset 40 from entry start
+    .space 40 - (. - 99b) ;; pad to offset 40 from entry start
 .endm
 
 .global stat_fd
@@ -14,7 +18,6 @@
 .global check_path_traversal
 .global check_path_safety
 .global decode_url
-.align 4
 
 .data
 ;; table of file extension / corresponding MIME types.
@@ -44,6 +47,7 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 .equ unknown_ct_len, . - unknown_ct
 
 .text
+.align 2
 
 ;; run fstat64() on file descirptor, returning file size and type
 ;; input
@@ -80,6 +84,8 @@ Lstat_fd_failed:
 Lstat_fd_end:
     add sp, sp, #160
     ret
+
+
 ;; run stat64() on file path, returning file size and type
 ;; input
 ;; x0 -> file path
@@ -189,6 +195,7 @@ Lpath_traversal:
     mov x0, #0
     ret
 
+
 ;; ensure a path only has ascii characters.
 ;; input
 ;; x0 -> path to check
@@ -222,6 +229,7 @@ Lsafe:
 Lunsafe:
     mov x0, #0
     ret
+
 
 ;; given a filename, extract the extension and return MIME type.
 ;; input
@@ -292,7 +300,8 @@ Lreturn:
     ldp x29, x30, [sp], #16
     ret
 
-;; convert %XX in URL to 0xXX raw bytes. %20 = newline, %0a = space, etc.
+
+;; convert %XX in URL to 0xXX raw bytes. %0a = newline, %20 = space, etc.
 ;; input
 ;; x0 -> encoded string
 ;; x1 -> length of encoded string

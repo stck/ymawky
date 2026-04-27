@@ -1,13 +1,15 @@
+;; parse.S
+;; HTTP request parsing: path, header end, content-length. plus tmp-file
+;; name generation, string compares, and the do_path_checks pipeline that
+;; ties the path-validation steps together.
+
 #include "defs.S"
 
-.global parse_path
 .global parse_header_end
 .global parse_content_length
 .global streqn
 .global make_tmp_file
-.global tmp_prefix
-.global tmp_prefix_len_val
-.align 4
+.global do_path_checks
 
 ;; this is PATH_MAX
 .equ filename_buf_size, 4096
@@ -32,7 +34,7 @@ default_file: .ascii "index.html"
 tmp_prefix: default_dir
             .ascii ".ymawky_tmp_"
 .equ tmp_prefix_len, . - tmp_prefix
-.align 3
+.align 3 ;; tmp_prefix length is odd, realign for the .quad below
 tmp_prefix_len_val: .quad tmp_prefix_len
 
 .bss
@@ -43,6 +45,8 @@ filename_buf_tmp: .skip filename_buf_tmp_size + 1
 .align 3
 
 .text
+.align 2
+
 ;; take a filename, and create a temporary file for PUT.
 ;; eg, "test.txt" -> "test.txt.<pid>". then "test.txt.<pid>" gets written to,
 ;; and on success, renamed to "test.txt", or unlinked on fail.
@@ -128,6 +132,7 @@ mtf_epilogue:
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #64
     ret
+
 
 ;; input
 ;; x0 -> HTTP header from client
@@ -301,6 +306,7 @@ pcl_epilogue:
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #48
     ret
+
 
 ;; input
 ;; x0 -> HTTP header from client ("GET /...")
@@ -540,6 +546,7 @@ Lstreqn_i_no_match:
     mov x0, #0
     ret
 
+
 ;; input
 ;; x0 -> str1
 ;; x1 -> str2
@@ -571,4 +578,65 @@ Lstreqn_no_match:
     mov x0, #0
     ret
 
+
+;; decode hex/safety check/traversal check for a given path.
+;; input
+;; none, uses data from .bss
+;;
+;; output
+;; none -- responds with 400 or other error codes if needed.
+do_path_checks:
+    stp x29, x30, [sp, #-16]!
+
+    adr_l x0, buf
+    bl parse_path
+    b.cs Lpp_fail
+
+    ;; x0 is already path, x1 is already path length
+    bl decode_url
+    cbz x0, L400
+
+    str_l x0, filename_str
+    str_l x1, filename_len
+    bl check_path_safety
+    cbz x0, L400
+
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
+    bl check_path_traversal
+    cbz x0, L400
+
+    ldr_l x0, filename_len
+    ldr_l x1, tmp_prefix_len_val
+    cmp x0, x1
+    b.lt 2f
+
+    ldr_l x0, filename_str
+    adr_l x1, tmp_prefix
+    ldr_l x2, tmp_prefix_len_val
+    bl streqn
+    cbnz x0, L403
+2:
+    ldp x29, x30, [sp], #16
+    ret
+
+Lpp_fail:
+    cbz x0, L400
+
+    ;; TODO -- this check is reduntant. parse_path has a reduntant check if
+    ;; the path starts with .ymawky_tmp_*, but that's a mistake, since it
+    ;; could be encoded with %. so i've moved the check to this function, now
+    ;; it's unneeded in parse_path.
+    cmp x0, #1
+    b.eq L403
+
+    ;; this shouldn't be possible -- x0 should either be only 0 or 1. if it's
+    ;; neither, something went wrong and it's my fault, personally.
+    b L500
+
+
+;; trampolines for conditional branches to reply_* in errors.S (which is too
+;; far for b.cond / cbz to reach directly).
 L400: b reply_400
+L403: b reply_403
+L500: b reply_500

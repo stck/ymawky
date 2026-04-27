@@ -1,14 +1,19 @@
+;; ymawky.S
+;; entry point. binds the socket, accepts connections, forks per-connection,
+;; reads the header (with a sigalrm-based total-time timeout), and dispatches
+;; to get/put/delete/etc. handlers.
+
 #include "defs.S"
 
 .global _main
 .global child_end
-.align 4
 
 ;; How many seconds total for the header before timing out?
 .equ header_req_timeout_secs, 1
 
 .data
 .align 3
+
 rcv_timeout:
     .quad 30  ; tv_sec, 30 second timeout per read. change for longer.
     .quad 0   ; tv_usec
@@ -16,7 +21,6 @@ rcv_timeout:
 ;; also 30 second time for total header -- prevent slowloris-like attackers
 ;; from opening a connection and sending <1 byte/min or something, hogging
 ;; resources.
-.align 3
 read_timer:
     .quad 0   ; it_interval.tv_sec
     .long 0   ; it_interval.tv_usec
@@ -26,6 +30,7 @@ read_timer:
     .long 0   ; it_value.tv_usec
     .long 0   ; -- padding --
 
+.align 2 ;; one is a .word (4 bytes)
 one: .word 1
 
 addr:
@@ -59,10 +64,12 @@ brew_req:
 .equ brew_req_len, . - brew_req
 
 .bss
+.align 3
 sockfd:             .skip 8
 
-.align 4
 .text
+.align 2
+
 _main:
     mov x28, #0
     ;; did we get an argument
@@ -189,6 +196,7 @@ Lreap:
 
     b loop
 
+
 child:
     ;; close sockfd
     mov x16, SYS_close
@@ -231,7 +239,7 @@ child:
     ;; not-portable. macOS only. yuck. (it shouldn't be too hard to port to
     ;; linux though).
     sub sp, sp, #32
-    adr_l x0, handle_timeout
+    adr_l x0, L408
     str x0, [sp, #0]  ; sa_handler
     str x0, [sp, #8]   ; sp_tramp = 408 handler. see bigass comment above.
     str xzr, [sp, #16] ; sa_mask = 0
@@ -403,6 +411,7 @@ Ldelete_method:
     b delete
     b child_end ; should never reach here, but just in case!
 
+
 child_end:
     ;; close(clientfd)
     mov x16, SYS_close
@@ -413,6 +422,7 @@ child_end:
     mov x16, SYS_exit
     mov x0, #0
     svc #0x80
+
 
 exit:
     ;; shutdown(sockfd, SHUT_RDRW)
@@ -425,14 +435,15 @@ exit:
     mov x16, SYS_close
     ldr_l x0, sockfd
     svc #0x80
-
+    ;; fallthrough
 fatal_exit:
     ;; exit(1)
     mov x16, SYS_exit
     mov x0, #1
     svc #0x80
 
-handle_timeout: b reply_408
+
+L408: b reply_408
 L418: b reply_418
 L431: b reply_431
 L500: b reply_500
