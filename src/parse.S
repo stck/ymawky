@@ -7,7 +7,6 @@
 
 .global parse_header_end
 .global parse_content_length
-.global streqn
 .global make_tmp_file
 .global do_path_checks
 
@@ -48,11 +47,10 @@ filename_buf_tmp: .skip filename_buf_tmp_size + 1
 .align 2
 
 ;; take a filename, and create a temporary file for PUT.
-;; eg, "test.txt" -> "test.txt.<pid>". then "test.txt.<pid>" gets written to,
+;; eg, "test.txt" -> ".ymawky_tmp_<pid>", then that temp file gets written to,
 ;; and on success, renamed to "test.txt", or unlinked on fail.
 ;; input
-;; x0 -> filename
-;; x1 -> length of filename
+;; none
 ;;
 ;; return
 ;; x0 -> generated temporary filename
@@ -510,78 +508,6 @@ Lno_end_found:
     ret
 
 
-;; case insensitive streqn
-;; input
-;; x0 -> str1
-;; x1 -> str2
-;; x2 -> max length
-;;
-;; returns
-;; x0 -> 1 if match, 0 if doesn't match
-streqn_i:
-    cbz x2, Lstreqn_i_match
-1:
-    ;; load bytes
-    ldrb w3, [x0]
-    ldrb w4, [x1]
-    ;; make them both lowercase by OR'ing with 0x20, doesn't affect other
-    ;; characters than alphabetical.
-    orr w3, w3, #0x20
-    orr w4, w4, #0x20
-    cmp w3, w4
-    b.ne Lstreqn_i_no_match
-
-    cbz w3, Lstreqn_i_match ; both equal and both NULL = end of string = match
-
-    ;; if we've reached the end, it's a match yeah?
-    subs x2, x2, #1
-    b.eq Lstreqn_i_match
-
-    add x0, x0, #1
-    add x1, x1, #1
-    b 1b
-
-Lstreqn_i_match:
-    mov x0, #1
-    ret
-
-Lstreqn_i_no_match:
-    mov x0, #0
-    ret
-
-
-;; input
-;; x0 -> str1
-;; x1 -> str2
-;; x2 -> max length
-;;
-;; returns
-;; x0 -> 1 if match, 0 if doesn't match
-streqn:
-    ldrb w3, [x0]
-    ldrb w4, [x1]
-    cmp w3, w4
-    b.ne Lstreqn_no_match
-
-    cbz w3, Lstreqn_match ;; both equal and both NULL = end of string = match
-
-    ;; if we've reached the end, it's a match yeah?
-    subs x2, x2, #1
-    b.eq Lstreqn_match
-
-    add x0, x0, #1
-    add x1, x1, #1
-    b streqn
-
-Lstreqn_match:
-    mov x0, #1
-    ret
-
-Lstreqn_no_match:
-    mov x0, #0
-    ret
-
-
 ;; decode hex/safety check/traversal check for a given path.
 ;; input
 ;; x0 -> boolean for parse_path, should a default file be provided if none is
@@ -620,7 +546,7 @@ do_path_checks:
     ldr_l x0, filename_str
     adr_l x1, tmp_prefix
     ldr_l x2, tmp_prefix_len_val
-    bl streqn
+    bl streqn_i
     cbnz x0, L403
 2:
     ldp x29, x30, [sp], #16

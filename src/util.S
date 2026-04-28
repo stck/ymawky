@@ -8,6 +8,8 @@
 .global atoi_n
 .global strlen
 .global memcpy
+.global streqn_i
+.global streqn
 
 .bss
 ;; itoa_buf is byte-addressed (strb/ldrb), so no special alignment needed.
@@ -168,4 +170,79 @@ strlen:
     b 1b
 
 2:
+    ret
+
+
+;; case insensitive streqn
+;; input
+;; x0 -> str1
+;; x1 -> str2
+;; x2 -> max length
+;;
+;; returns
+;; x0 -> 1 if match, 0 if doesn't match
+streqn_i:
+    cbz x2, Lstreqn_i_match
+1:
+    ;; load bytes
+    ldrb w3, [x0]
+    ldrb w4, [x1]
+
+    cmp w3, #0
+    ccmp w4, #0, #0, eq  ; if w3 == NULL, check if w4 is also NULL
+    b.eq Lstreqn_i_match ; if they're both NULL, it's a match!
+
+    ;; make them both lowercase by OR'ing with 0x20, doesn't affect other
+    ;; characters than alphabetical.
+    orr w3, w3, #0x20
+    orr w4, w4, #0x20
+    cmp w3, w4
+    b.ne Lstreqn_i_no_match
+
+    ;; if we've reached the end, it's a match yeah? fuck yeah.
+    subs x2, x2, #1
+    b.eq Lstreqn_i_match
+
+    add x0, x0, #1
+    add x1, x1, #1
+    b 1b
+
+Lstreqn_i_match:
+    mov x0, #1
+    ret
+
+Lstreqn_i_no_match:
+    mov x0, #0
+    ret
+
+
+;; input
+;; x0 -> str1
+;; x1 -> str2
+;; x2 -> max length
+;;
+;; returns
+;; x0 -> 1 if match, 0 if doesn't match
+streqn:
+    ldrb w3, [x0]
+    ldrb w4, [x1]
+    cmp w3, w4
+    b.ne Lstreqn_no_match
+
+    cbz w3, Lstreqn_match ;; both equal and both NULL = end of string = match
+
+    ;; if we've reached the end, it's a match yeah?
+    subs x2, x2, #1
+    b.eq Lstreqn_match
+
+    add x0, x0, #1
+    add x1, x1, #1
+    b streqn
+
+Lstreqn_match:
+    mov x0, #1
+    ret
+
+Lstreqn_no_match:
+    mov x0, #0
     ret

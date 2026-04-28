@@ -242,52 +242,55 @@ Lunsafe:
 get_filetype:
     ;; push the link register to the stack sorta. since we bl strcmp, we need
     ;; to preserve it
-    stp x29, x30, [sp, #-16]!
-    mov x4, x0 ; save the start pointer
+    stp x29, x30, [sp, #-64]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    str x23, [sp, #48]
+    mov x19, x0 ; save the start pointer
     add x0, x0, x1 ; now x0 points to one past the end of the string
 
 1:
     ; are we at the start again? if so, no file extension was present.
-    cmp x0, x4
+    cmp x0, x19
     b.eq Lreturn_unknown
 
     sub x0, x0, #1
 
-    ldrb w3, [x0]
-    cmp w3, #'.'
+    ldrb w20, [x0]
+    cmp w20, #'.'
     b.eq Lfound_extension
 
     b 1b
 
 ;; Ok, now x0 is pointing at the '.' in the filename
 Lfound_extension:
-    mov x5, x0 ;; save this position
-    mov x6, x1
+    mov x21, x0 ;; save this position
+    mov x22, x1
 
     adr_l x1, file_types
 
 1:
-    ldrb w3, [x1]
-    cmp w3, #0
+    ldrb w20, [x1]
+    cmp w20, #0
     b.eq Lreturn_unknown
 
-    mov x7, x1 ;; save table pointer
-    mov x0, x5 ;; filename, from . and on
+    mov x23, x1 ;; save table pointer
+    mov x0, x21 ;; filename, from . and on
     mov x2, #8
-    bl streqn
+    bl streqn_i
 
     cmp x0, #1
     b.eq Lmatch
 
-    add x1, x7, #40
+    add x1, x23, #40
     b 1b
 
 Lmatch:
-    add x6, x7, #8
-    mov x1, x6 ;; strlen takes x1
+    add x22, x23, #8
+    mov x1, x22 ;; strlen takes x1
     bl strlen  ;; x0 is now length
     mov x1, x0 ;; we want to return length in x1
-    mov x0, x6
+    mov x0, x22
     b Lreturn
 
 Lreturn_unknown:
@@ -297,7 +300,10 @@ Lreturn_unknown:
  
 Lreturn:
     ;; restore the link register we pushed to the stack
-    ldp x29, x30, [sp], #16
+    ldr x23, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #64
     ret
 
 

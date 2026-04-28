@@ -154,7 +154,7 @@ get_setup:
     mov x1, #0 ; RDONLY
     orr x1, x1, #O_NOFOLLOW_ANY
     svc #0x80
-    b.cs L404 ; if the carry flag is set, open() failed so 404
+    b.cs Lhfs_err ; if the carry flag is set, open() failed so handle it
 
     ;; save the file descriptor
     str_l x0, file_des
@@ -247,13 +247,16 @@ Lwrite_loop:
     mov x1, x10
     mov x2, x11
     svc #0x80
-    b.cs Lwrite_done ;; uh oh something went wrong, we gotta mmunmap the file
-            ;; and stuff now.
+    b.cs Lwrite_error
 
     ; x0 -> bytes written
     add x10, x10, x0 ; advance the pointer by x0 bytes
     sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
     b Lwrite_loop
+
+Lwrite_error:
+    cmp x0, #EINTR
+    b.eq Lwrite_loop
 
 Lwrite_done:
     mov x16, SYS_munmap

@@ -76,7 +76,8 @@ _main:
     cmp x0, #1
     b.le skip_argv
 
-    ldrb w0, [x1, #8]
+    ldr x9, [x1, #8] ; argv[1] pointer
+    ldrb w0, [x9] ; first byte of string
     ; if it's less than 'A' (0x41), it's probably a number. so if it is, just
     ; treat it as a port. otherwise, if it's > A (so any letter), let's treat
     ; it as a debug option. pretty hack-y, but supes helpful for debugging, so
@@ -250,6 +251,7 @@ child:
     mov x1, sp
     mov x2, #0 ; old action = NULL
     svc #0x80
+    add sp, sp, #32
     b.cs L500
 
     ;; read(client_fd, buffer, buffer_size)

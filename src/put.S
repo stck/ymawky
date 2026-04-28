@@ -23,6 +23,7 @@ put_read_timer:
 .align 3
 filename_tmp_str:     .skip 8
 filename_tmp_len:     .skip 8
+tmp_fd:               .skip 8
 
 .text
 .align 2
@@ -120,8 +121,6 @@ Ltarget_missing:
     mov x21, x0 ;; save content-length in x21
 
 1:
-    ldr_l x0, filename_str
-    ldr_l x1, filename_len
     bl make_tmp_file
     b.cs L500
 
@@ -141,6 +140,7 @@ Ltarget_missing:
     ;; the errnos and their causes are largely the same.
     b.cs Lput_stat_failed
     mov x25, x0 ;; save fd into x25
+    str_l x0, tmp_fd
 
     ;; x0 is already set
     bl stat_fd
@@ -156,7 +156,7 @@ Ltarget_missing:
     cmp x22, x21
     csel x2, x22, x21, lo
     bl write_all
-    b.cs L500
+    b.cs Lput_close_and_500
     sub x21, x21, x0
     cbz x21, Lput_done
 
@@ -233,6 +233,7 @@ Ltarget_missing:
     ;; major difference.
     ;; set up the __sigaction struct
     adr_l x0, Lput_sigalrm_handler
+    sub sp, sp, #32 ; allocate space on the stack
     str x0, [sp, #0]  ; sa_handler
     str x0, [sp, #8]   ; sp_tramp = 408 handler. see bigass comment above.
     str wzr, [sp, #16] ; sa_mask = 0
@@ -242,10 +243,11 @@ Ltarget_missing:
     mov x1, sp
     mov x2, #0 ; old action = NULL
     svc #0x80
+    add sp, sp, #32
     ;; if sigaction fails, it's due to some memory issue. that should always
     ;; be a 500. i don't want to just silently fail and let any connections go
     ;; un-timedout, so just throw a 500 and take the shit.
-    b.cs L500
+    b.cs Lput_close_and_500
 
     mov x22, #BUF_SIZE ; from defs.S, 16KB
 Lput_readwrite_loop:
@@ -267,7 +269,7 @@ Lput_readwrite_loop:
     adr_l x1, buf
     mov x0, x25
     bl write_all
-    b.cs L500
+    b.cs Lput_close_and_500
 
     ;; did we read 0 bytes? we're done if so. should this be b.lo? i'd like it
     ;; to be less than or equal, but i believe lo is just less-than. maybe 2
@@ -277,11 +279,34 @@ Lput_readwrite_loop:
     b Lput_readwrite_loop
 
 Lput_read_failed:
-    cmp x0, #EAGAIN
-    b.eq L408
-    ;; fallthrough
+    cmp x0, #EINTR
+    b.eq Lput_readwrite_loop
+
+    mov x20, x0 ; save errno
+    bl Lput_cleanup_tmp_file
+    mov x0, x20 ; restore
+
+    cb eq, x0, #EAGAIN, L408
+    ;; all of these should just silently exit
+    cb eq, x0, #ECONNRESET, Lchild_end
+    cb eq, x0, #ETIMEDOUT, Lchild_end
+    cb eq, x0, #ECONNABORTED, Lchild_end
+    cb eq, x0, #EPIPE, Lchild_end
+    cb eq, x0, #ENETDOWN, Lchild_end
+    cb eq, x0, #ENETUNREACH, Lchild_end
+    cb eq, x0, #ENETRESET, Lchild_end
+    cb eq, x0, #EHOSTDOWN, Lchild_end
+    cb eq, x0, #EHOSTUNREACH, Lchild_end
+
+    ;; none of those, so something weird's going on. just 500.
+    b reply_500
+
 Lput_close_and_500:
-    ;; close and delete the temporary file
+    bl Lput_cleanup_tmp_file
+    b reply_500
+
+;; close and delete the temporary file
+Lput_cleanup_tmp_file:
     mov x16, SYS_close
     mov x0, x25
     svc #0x80
@@ -290,11 +315,15 @@ Lput_close_and_500:
     ldr_l x0, filename_tmp_str
     svc #0x80
 
-    b reply_500
+    ret
 
 Lput_sigalrm_handler:
     mov x16, SYS_close
-    mov x0, x25
+    ;; since Lput_sigalrm_handler is technically sa_tramp for __sigaction,
+    ;; registers like x25 don't actually get preserved. all registers x5-x29
+    ;; are unspecified within sa_tramp, so we can't reliably close() it. that's
+    ;; why we str_l'd it when we opened it.
+    ldr_l x0, tmp_fd
     svc #0x80
 
     mov x16, SYS_unlink
@@ -318,13 +347,11 @@ Lput_read_zero:
     mov x0, x25
     svc #0x80
 
-    cbz x19, 4f ; if no file was created, just reply 400
     mov x16, SYS_unlink
     ldr_l x0, filename_tmp_str
     svc #0x80
-4:
-bp1:
-    b L400
+
+    b reply_400
 
 Lput_done:
     mov x16, SYS_close
@@ -338,10 +365,18 @@ Lput_done:
     ldr_l x3, filename_str
     mov x4, #RENAME_NOFOLLOW_ANY
     svc #0x80
-    b.cs Lhfs_err
+    b.cs 2f
 
     cbnz x19, L201
     b L204
+
+2:
+    mov x20, x0
+    mov x16, SYS_unlink
+    ldr_l x0, filename_tmp_str
+    svc #0x80
+    mov x0, x20
+    b handle_fs_error
 
 ;; if stat failed, let's close the temp file (if opened) and then branch to
 ;; handle_fs_error(errors.S) which will give the relevant HTTP code.
@@ -349,20 +384,16 @@ Lput_stat_failed:
     cbz x25, 3f
 
     ;; save errno from fstat64() in x1.
-    mov x1, x0
-
-    mov x16, SYS_close
-    mov x0, x25
-    svc #0x80
+    mov x20, x0
+    bl Lput_cleanup_tmp_file
     ;; restore fstat64()'s errno, in case close() also had an error lol
-    mov x0, x1
+    mov x0, x20
 3:
     b handle_fs_error
 
 ;; couldn't parse content length. if x0 is 1, it's a bad request. if x0 is 0,
 ;; no content length was actually provided.
 Lpcl_error:
-bp2:
     cmp x0, #1
     b.eq L400
     cmp x0, #0
@@ -385,12 +416,11 @@ put_epilogue:
 ;; trampolines for conditional branches across files.
 L201: b reply_201
 L204: b reply_204
-bp3:
-L400:
-    b reply_400
+L400: b reply_400
 L403: b reply_403
 L408: b reply_408
 L411: b reply_411
 L413: b reply_413
 L500: b reply_500
-Lhfs_err: b handle_fs_error
+Lchild_end: b child_end
+;Lhfs_err: b handle_fs_error
