@@ -6,7 +6,7 @@ This is *ymawky*, a web server written entirely in ARM64 assembly. *ymawky* is a
 
 ## Building
 Requires Xcode Command Line Tools. Install with `xcode-select --install`.
-*ymawky* only runs on apple silicon (arm64) only.
+*ymawky* only runs on apple silicon (arm64).
 
 Run `make` to build.
 Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where `ymawky` searches for files.
