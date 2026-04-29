@@ -1,6 +1,3 @@
-;; data.S
-;; shared data referenced by multiple files
-
 #include "defs.S"
 
 .global buf
