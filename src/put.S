@@ -114,11 +114,12 @@ Ltarget_missing:
     ;; from slowly drip-drip-dripping content into a PUT and taking up
     ;; resources.
     ;; number of seconds = grace_period + content_length / min_bps
-    ;; 5s + content_length / 4kb/s
-    mov x1, #4096
+    ;; 5s + content_length / 16kb/s
+    mov x1, #16384
     udiv x2, x21, x1 ;; x2 = content_length / min_bps
     add x2, x2, #5 ;; +5s grace
 
+    ;; 
     ;; write the number of seconds calculated to the itimerval struct in the
     ;; it_value.tv_sec member
     adr_l x0, put_read_timer

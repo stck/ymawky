@@ -9,7 +9,7 @@
 .global child_end
 
 ;; How many seconds total for the header before timing out?
-.equ header_req_timeout_secs, 15
+.equ header_req_timeout_secs, 10
 ;; how many active concurrent processes should be allowed?
 .equ MAX_PROCS, 256
 
@@ -249,7 +249,7 @@ child:
     svc #0x80
     b.cs child_end
 
-    ;; arm timer before reading, 30 second total time to read
+    ;; arm timer before reading
     mov x16, SYS_setitimer
     mov x0, #0 ; ITIMER_REAL
     adr_l x1, read_timer
