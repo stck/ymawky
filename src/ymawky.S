@@ -17,7 +17,7 @@
 .align 3
 
 rcv_timeout:
-    .quad 30  ; tv_sec, 30 second timeout per read. change for longer.
+    .quad 10  ; tv_sec, 10 second timeout per read. change for longer.
     .quad 0   ; tv_usec
 
 ;; also 30 second time for total header -- prevent slowloris-like attackers
