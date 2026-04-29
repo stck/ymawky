@@ -5,6 +5,9 @@
 This is *ymawky*, a web server written entirely in ARM64 assembly. *ymawky* is a syscall-only, fork-per-connection web server written by hand, with no libc. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some (hopefully minor) tweaks to get this to run on Linux/other Unix systems.
 
 ## Building
+Requires Xcode Command Line Tools. Install with `xcode-select --install`.
+*ymawky* only runs on apple silicon (arm64) only.
+
 Run `make` to build.
 Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where `ymawky` searches for files.
 `GET` with an empty filename (`GET /`) will search for `www/index.html`, so you might want to make sure there's an `index.html` as well.
@@ -85,6 +88,18 @@ MIME types are detected by analyzing the file extension. The following MIME type
 - `.pdf` -> `application/pdf`
 - `.woff2` -> `font/woff2`
 - `.xml` -> `text/xml; charset=utf-8`
+
+### Implementation Notes
+*ymawky* is written for MacOS (sorry...). There are a few (well, more than a *few*) things that are MacOS-specific in this code that won't be portable.
+- Syscalls on MacOS use `x16` for the number and `svc #0x80` to call it. Linux uses `x8` and `svc #0`.
+- Error reporting is different. MacOS sets the carry flag on error, and puts `errno` in `x0`. Linux returns a negative value in `x0`, like `-ENOENT`. Ever `b.cs` would need to be replaced with `cmp x0, #0` / `b.lt ...`, and you'd negate `x0` to get errno.
+- `fork()` works differently, MacOS puts 1 in `x1` in the child process, whereas Linux puts `0` in `x0`.
+- `SO_NOSIGPIPE` doesn't exist on Linux.
+- `O_NOFOLLOW_ANY` is also MacOS-specific.
+- `renameatx_np()` is also MacOS-specific. Linux has `renameat2()`, with different flag values.
+- Struct layouts and offsets will differ. The `stat64` struct, `itimerval` struct, and `sockaddr_in` struct, will all need to be reconsidered.
+- `adr xN, foo@PAGE` / `add xN, xN, foo@PAGEOFF` are Mach-O relocation operators. Linux ELF uses different syntax, like `:pg_hi21:` and `:lo12:`. The `adr_l`, `ldr_l` and `str_l` macros would need to be rewritten or replaced.
+- My personal favorite :3 Signal handling works differently on Linux and MacOS. MacOS's `sigaction` struct contains a `sa_tramp` field that the kernel jumps to before your handler. *ymawky* utilizes `sa_tramp` directly *as the handler itself*, skipping the libc trampoline and `sigreturn` entirely. Since the handler only sends a 408 and exits, without needing to return, that's fine and works wonderfully without libc. The `sigaction` call would need to be rewritten for POSIX systems.
 
 ### Special Thanks:
 - *Bob Johnson*
