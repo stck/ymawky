@@ -1,4 +1,4 @@
-;; defs.S
+#include "config.S"
 
 ;; macros
 ;; turn adrp ... add ... into one call, adrl_l

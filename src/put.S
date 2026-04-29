@@ -115,9 +115,9 @@ Ltarget_missing:
     ;; resources.
     ;; number of seconds = grace_period + content_length / min_bps
     ;; 5s + content_length / 16kb/s
-    mov x1, #16384
+    mov x1, #PUT_MIN_BPS ; from config.S
     udiv x2, x21, x1 ;; x2 = content_length / min_bps
-    add x2, x2, #5 ;; +5s grace
+    add x2, x2, #PUT_GRACE_SECS ; ditto
 
     ;; 
     ;; write the number of seconds calculated to the itimerval struct in the

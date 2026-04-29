@@ -14,8 +14,6 @@
 .equ filename_buf_size, 4096
 ;; (PATH_MAX + some extra bytes for tmp stuff)
 .equ filename_buf_tmp_size, filename_buf_size + 64
-;; accept files of up to 1GB for PUT. change this if you want larger files.
-.equ MAX_BODY_SIZE, 1024 * 1024 * 1024
 
 .data
 header_end: .ascii "\r\n\r\n"
@@ -24,13 +22,13 @@ header_end: .ascii "\r\n\r\n"
 content_len_match_str: .ascii "content-length"
 .equ content_len_match_len, 14
 
-www_prefix: default_dir ;; default_dir from defs.S
+www_prefix: .ascii DEFAULT_DIR ;; DEFAULT_DIR from config.S
 .equ www_prefix_len, . - www_prefix
 
-default_file: .ascii "index.html"
+default_file: .ascii DEFAULT_FILE ;; also from config.S
 .equ default_file_len, . - default_file
 
-tmp_prefix: default_dir
+tmp_prefix: .ascii DEFAULT_DIR
             .ascii ".ymawky_tmp_"
 .equ tmp_prefix_len, . - tmp_prefix
 .align 3 ;; tmp_prefix length is odd, realign for the .quad below

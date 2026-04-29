@@ -8,17 +8,12 @@
 .global _main
 .global child_end
 
-;; How many seconds total for the header before timing out?
-.equ header_req_timeout_secs, 10
-;; how many active concurrent processes should be allowed?
-.equ MAX_PROCS, 256
-
 .data
 .align 3
 
 rcv_timeout:
-    .quad 10  ; tv_sec, 10 second timeout per read. change for longer.
-    .quad 0   ; tv_usec
+    .quad RECV_TIMEOUT ; tv_sec
+    .quad 0            ; tv_usec
 
 ;; also 30 second time for total header -- prevent slowloris-like attackers
 ;; from opening a connection and sending <1 byte/min or something, hogging
@@ -234,7 +229,7 @@ child:
     ldr_l x0, clientfd
     mov x1, #0xFFFF ; SOL_SOCKET
     mov x2, #0x1006 ; SO_RCVTIMEO = 0x1006
-    adr_l x3, rcv_timeout ; 10 seconds, 0 usec
+    adr_l x3, rcv_timeout
     mov x4, #16 ; struct timeval is 16 bytes
     svc #0x80
     b.cs child_end
@@ -253,7 +248,7 @@ child:
     mov x16, SYS_setitimer
     mov x0, #0 ; ITIMER_REAL
     adr_l x1, read_timer
-    mov x2, #header_req_timeout_secs
+    mov x2, #HEADER_REQ_TIMEOUT_SECS
     str x2, [x1, #16] ; offset 16 = it_value.tv_sec
     mov x2, #0
     svc #0x80
