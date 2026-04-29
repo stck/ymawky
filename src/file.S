@@ -9,7 +9,7 @@
     .asciz "\ext"
     .space 8 - (. - 99b)  ;; pad to offset 8 from entry start
     .asciz "\mime"
-    .space 40 - (. - 99b) ;; pad to offset 40 from entry start
+    .space 96 - (. - 99b) ;; pad to offset 96 from entry start
 .endm
 
 .global stat_fd
@@ -21,12 +21,14 @@
 
 .data
 ;; table of file extension / corresponding MIME types.
-;; this table is offset by 40 bytes per entry; 8 bytes for the extension, and
-;; 32 bytes for the MIME type string.
+;; this table is offset by 96 bytes per entry; 8 bytes for the extension, and
+;; 88 bytes for the MIME type string.
 file_types:
     ;; web stuff
     mime_entry ".html",  "text/html; charset=utf-8"
+    mime_entry ".htm",   "text/html; charset=utf-8"
     mime_entry ".css",   "text/css; charset=utf-8"
+    mime_entry ".csv",   "text/csv; charset=utf-8"
     mime_entry ".xml",   "text/xml; charset=utf-8"
     mime_entry ".js",    "text/javascript; charset=utf-8"
     mime_entry ".json",  "application/json"
@@ -43,6 +45,9 @@ file_types:
     mime_entry ".ico",   "image/x-icon"
     mime_entry ".webp",  "image/webp"
     mime_entry ".avif",  "image/avif"
+    mime_entry ".bmp",   "image/bmp"
+    mime_entry ".tiff",  "image/tiff"
+    mime_entry ".apng",  "image/apng"
 
     ;; fonts
     mime_entry ".woff",  "font/woff"
@@ -50,23 +55,37 @@ file_types:
     mime_entry ".ttf",   "font/ttf"
     mime_entry ".otf",   "font/otf"
 
-    ;; misc files
+    ;; documents
     mime_entry ".txt",   "text/plain; charset=utf-8"
     mime_entry ".pdf",   "application/pdf"
+    mime_entry ".doc",   "application/msword"
+    mime_entry ".docx",  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    mime_entry ".epub",  "application/epub+zip"
+    mime_entry ".rtf",   "application/rtf"
 
     ;; video
     mime_entry ".mp4",   "video/mp4"
     mime_entry ".webm",  "video/webm"
+    mime_entry ".mkv",   "video/x-matroska"
+    mime_entry ".avi",   "video/x-msvideo"
+    mime_entry ".mov",   "video/quicktime"
 
     ;; audio
     mime_entry ".mp3",   "audio/mpeg"
     mime_entry ".ogg",   "audio/ogg"
     mime_entry ".wav",   "audio/wav"
+    mime_entry ".flac",  "audio/flac"
+    mime_entry ".aac",   "audio/aac"
+    mime_entry ".m4a",   "audio/mp4"
+    mime_entry ".opus",  "audio/opus"
 
     ;; archives
     mime_entry ".zip",   "application/zip"
     mime_entry ".gz",    "application/gzip"
     mime_entry ".tar",   "application/x-tar"
+    mime_entry ".7z",    "application/x-7z-compressed"
+    mime_entry ".bz2",   "application/x-bzip2"
+    mime_entry ".rar",   "application/vnd.rar"
 
     ;; empty extension = end of table
     .byte 0
@@ -310,7 +329,7 @@ Lfound_extension:
     cmp x0, #1
     b.eq Lmatch
 
-    add x1, x23, #40
+    add x1, x23, #96
     b 1b
 
 Lmatch:

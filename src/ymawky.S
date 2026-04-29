@@ -72,6 +72,9 @@ http_1_1: .ascii "HTTP/1.1"
 host_str: .ascii "Host"
 .equ host_str_len, . - host_str
 
+header_503: .ascii "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\nServer: ymawky\r\n\r\n"
+.equ header_503_len, . - header_503
+
 .bss
 .align 3
 sockfd:             .skip 8
@@ -154,6 +157,11 @@ skip_argv:
     cbnz x28, 1f
 loop:
 ;; reap any dead child processes
+;; note: some (like, one) children may briefly exist as zombies between the
+;; child exiting and the next accept() returning. Lreap cleans them up on the
+;; next iteration. this is pretty harmless beyond a couple hundred bytes of
+;; memory *maybe* being wasted. this should ideally be fixme'd in the future,
+;; though.
 Lreap:
     mov x16, SYS_wait4
     mov x0, #-1 ; any child
@@ -189,11 +197,15 @@ Lreap:
     ldr_l x0, procs
     cmp x0, #MAX_PROCS
     b.lo 8f
-    ;; uh-oh, we're at the max processes. just close clientfd and loop.
-    mov x16, SYS_close
+
+    ;; uh-oh, we're at the max processes. let's give a nice, kind, smart, cute,
+    ;; lil, friendly 503 :3
+    mov x16, SYS_write
     ldr_l x0, clientfd
+    adr_l x1, header_503
+    mov x2, header_503_len
     svc #0x80
-    b loop
+    b 2f ; close n loop!
 
 8:
     ldr_l x0, procs
@@ -208,6 +220,7 @@ Lreap:
     ldr_l x0, procs
     sub x0, x0, #1
     str_l x0, procs
+
     b 2f ; close n loop again
 
 3:
@@ -235,7 +248,7 @@ child:
     ldr_l x0, sockfd
     svc #0x80
 
-    ;; setsockopt() with a 10 second SO_RCVTIMEO timeout, to prevent
+    ;; setsockopt() with a SO_RCVTIMEO timeout from config.S, to prevent
     ;; connections from staying open indefinitely
     mov x16, SYS_setsockopt
     ldr_l x0, clientfd

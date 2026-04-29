@@ -1,8 +1,7 @@
-
-![ymawky](http://i.imgur.com/INBvStO.png)
+![ymawky](ymawky.png)
 
 # Ymawky -- *web server in ARM assembly*
-This is *ymawky*, a web server written entirely in ARM64 assembly. *ymawky* is a syscall-only, fork-per-connection web server written by hand, with no libc. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some (hopefully minor) tweaks to get this to run on Linux/other Unix systems.
+This is *ymawky*, a web server written entirely in ARM64 assembly. *ymawky* is a syscall-only, no libc, fork-per-connection web server written by hand. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some (hopefully minor) tweaks to get this to run on Linux/other Unix systems. See [Implementation Notes](#implementation-notes) for more details.
 
 ## Building
 Requires Xcode Command Line Tools. Install with `xcode-select --install`.
@@ -11,6 +10,7 @@ Requires Xcode Command Line Tools. Install with `xcode-select --install`.
 Run `make` to build.
 Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where `ymawky` searches for files.
 `GET` with an empty filename (`GET /`) will search for `www/index.html`, so you might want to make sure there's an `index.html` as well.
+See [Configuration](#configuration) to modify the default file and docroot.
 
 ## Running
 - `./ymawky` to start running the web server on `127.0.0.1:8080`.
@@ -40,6 +40,7 @@ Ymawky is a static-file web server. It doesn't support server-side code to gener
 - `PUT` is atomic due to writing to a temporary file then renaming, allowing concurrent `PUT` requests without leaving partially-written files
 - `Content-Length:` parsing and verification in `PUT` requests
 - MIME type detection, giving `Content-Type` in the response header with the corresponding MIME type
+- Accepts `Range: bytes=` ranges in GET requests, supporting full ranges `bytes=X-N`, suffix ranges `bytes=-N`, and open-ended ranges `bytes=X-`. Video scrubbing is well supported
 
 ## "Safety"
 This is a web server written entirely by-hand in ARM64 assembly as a fun project. It's probably got a lot of vulnerabilities I'm unaware of. However, I did do my best to make it safer. Here are some safety precautions ymawky takes.
@@ -57,6 +58,7 @@ Ymawky currently supports and can reply with the following status codes:
 - `200 OK`
 - `201 Created`
 - `204 No Content`
+- `206 Partial Content`
 - `400 Bad Request`
 - `403 Forbidden`
 - `404 Not Found`
@@ -65,31 +67,96 @@ Ymawky currently supports and can reply with the following status codes:
 - `411 Length Required`
 - `413 Content Too Large`
 - `414 URI Too Long`
+- `416 Range Not Satisfiable`
 - `418 I'm a teapot`
 - `431 Request Header Fields Too Large`
 - `500 Internal Server Error`
 - `501 Not Implemented`
+- `503 Service Unavailable`
+- `505 HTTP Version Not Supported`
 - `507 Insufficient Storage`
 
 ## MIME Types
-MIME types are detected by analyzing the file extension. The following MIME types are recognized:
-- `.html` -> `text/html; charset=utf-8`
-- `.css` -> `text/css; charset=utf-8`
-- `.js` -> `text/javascript; charset=utf-8`
-- `.json` -> `application/json`
-- `.png` -> `image/png`
-- `.jpg` -> `image/jpeg`
-- `.jpeg` -> `image/jpeg`
-- `.gif` -> `image/gif`
-- `.svg` -> `image/svg+xml`
-- `.ico` -> `image/x-icon`
-- `.webp` -> `image/webp`
-- `.txt` -> `text/plain; charset=utf-8`
-- `.pdf` -> `application/pdf`
-- `.woff2` -> `font/woff2`
-- `.xml` -> `text/xml; charset=utf-8`
+MIME types are detected by analyzing the file extension. The following MIME types are recognized.
 
-### Implementation Notes
+Web-related files:
+- `.html`  -> `text/html; charset=utf-8`
+- `.htm`   -> `text/html; charset=utf-8`
+- `.css`   -> `text/css; charset=utf-8`
+- `.csv`   -> `text/csv; charset=utf-8`
+- `.xml`   -> `text/xml; charset=utf-8`
+- `.js`    -> `text/javascript; charset=utf-8`
+- `.json`  -> `application/json`
+- `.wasm`  -> `application/wasm`
+- `.mjs`   -> `text/javascript; charset=utf-8`
+- `.map`   -> `application/json`
+
+Image files:
+- `.png`   -> `image/png`
+- `.jpg`   -> `image/jpeg`
+- `.jpeg`  -> `image/jpeg`
+- `.gif`   -> `image/gif`
+- `.svg`   -> `image/svg+xml`
+- `.ico`   -> `image/x-icon`
+- `.webp`  -> `image/webp`
+- `.avif`  -> `image/avif`
+- `.bmp`   -> `image/bmp`
+- `.tiff`  -> `image/tiff`
+- `.apng`  -> `image/apng`
+
+Font files:
+- `.woff`  -> `font/woff`
+- `.woff2` -> `font/woff2`
+- `.ttf`   -> `font/ttf`
+- `.otf`   -> `font/otf`
+
+Document files:
+- `.txt`   -> `text/plain; charset=utf-8`
+- `.pdf`   -> `application/pdf`
+- `.doc`   -> `application/msword`
+- `.docx`  -> `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- `.epub`  -> `application/epub+zip`
+- `.rtf`   -> `application/rtf`
+
+Video files:
+- `.mp4`   -> `video/mp4`
+- `.webm`  -> `video/webm`
+- `.mkv`   -> `video/x-matroska`
+- `.avi`   -> `video/x-msvideo`
+- `.mov`   -> `video/quicktime`
+
+Audio files:
+- `.mp3`   -> `audio/mpeg`
+- `.ogg`   -> `audio/ogg`
+- `.wav`   -> `audio/wav`
+- `.flac`  -> `audio/flac`
+- `.aac`   -> `audio/aac`
+- `.m4a`   -> `audio/mp4`
+- `.opus`  -> `audio/opus`
+
+Archive files:
+- `.zip`   -> `application/zip`
+- `.gz`    -> `application/gzip`
+- `.tar`   -> `application/x-tar`
+- `.7z`    -> `application/x-7z-compressed`
+- `.bz2`   -> `application/x-bzip2`
+- `.rar`   -> `application/vnd.rar`
+
+## Configuration
+You can configure *ymawky* with the `config.S` file. The options are documented here.
+- `#define DEFAULT_DIR "www/"` -- This is the docroot. Change it to wherever your HTML files are, relative to *ymawky*, or use an absolute path:
+  - `#define DEFAULT_DIR "www/"`
+  - `#define DEFAULT_DIR "/Library/WebServer/Documents`
+  - `#define DEFAULT_DIR "./"`
+- `#define DEFAULT_FILE "index.html"` -- This is the default file *ymawky* will serve when it receives an empty `GET / HTTP/1.1` request
+- `.equ RECV_TIMEOUT, 10` -- Number of seconds *ymawky* will wait to receive datta before closing the connection. If it's more than `RECV_TIMEOUT` seconds between `read()`s, *ymawky* will close the connection with `408 Request Timed Out`
+- `.equ HEADER_REQ_TIMEOUT_SECS, 10` -- Maximum number of seconds *ymawky* will wait to receive the full header before timing out. If it takes, longer than this to receive the header, *ymawky* will close the connection with `408 Request Timed Out`
+- `.equ PUT_GRACE_SECS, 5` -- *ymawky* dynamically calculates a max-time-per-PUT based on `Content-Length`. The max time is defined as `PUT_GRACE_SECS + Content-Length / PUT_MIN_BPS`. This is the minimum grace period allowed if it calculates a file should take <1 second to upload
+- `.equ PUT_MIN_BPS, 1024 * 16` -- Minimum bytes-per-second. Higher if you want to be stricter, smaller if you want to be more lenient. Since this uses the `.equ` directive, arithmetic is supported, and `1024 * 16` gets calculated at assembly time becoming `16384` or 16KB
+- `.equ MAX_BODY_SIZE, 1024 * 1024 * 1024` -- Maximum bytes PUT allows for Content-Length. By default, 1GB (1024*1024*1024 = 1073741824 bytes). Files with a larger Content-Length larger than this will be rejected with `413 Content Too Large`
+- `.equ MAX_PROCS, 256` -- Maximum number of concurrent proccesses *ymawky* is allowed to run. Since *ymawky* is a fork-per-connection server, you want to ensure *ymawky* doesn't exhaust your PID space. *ymawky* will reply with `503 Service Unavailable`
+
+## Implementation Notes
 *ymawky* is written for MacOS (sorry...). There are a few (well, more than a *few*) things that are MacOS-specific in this code that won't be portable.
 - Syscalls on MacOS use `x16` for the number and `svc #0x80` to call it. Linux uses `x8` and `svc #0`.
 - Error reporting is different. MacOS sets the carry flag on error, and puts `errno` in `x0`. Linux returns a negative value in `x0`, like `-ENOENT`. Ever `b.cs` would need to be replaced with `cmp x0, #0` / `b.lt ...`, and you'd negate `x0` to get errno.

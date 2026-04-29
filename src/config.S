@@ -6,6 +6,15 @@
 ;; Default: index.html
 #define DEFAULT_FILE "index.html"
 
+;; Maximum time, in seconds, without receiving any data before closing the
+;; connection.
+;; Default: 10 seconds
+.equ RECV_TIMEOUT, 10
+
+;; Maximum time, in seconds, to receive the full header before timing out.
+;; Default: 10 seconds
+.equ HEADER_REQ_TIMEOUT_SECS, 10
+
 ;; The timeout for PUT is calculated by:
 ;; timeout (secs) = PUT_GRACE_SECS + Content-Length / MIN_BPS. So for very small
 ;; files, it will basically just be the grace period.
@@ -19,15 +28,6 @@
 ;; Maximum file size, in bytes, for PUT to receive.
 ;; Default: 1GB
 .equ MAX_BODY_SIZE, 1024 * 1024 * 1024
-
-;; Maximum time, in seconds, to receive the full header before timing out.
-;; Default: 10 seconds
-.equ HEADER_REQ_TIMEOUT_SECS, 10
-
-;; Maximum time, in seconds, without receiving any data before closing the
-;; connection.
-;; Default: 10 seconds
-.equ RECV_TIMEOUT, 10
 
 ;; Maximum number of active, concurrent processes allowed.
 ;; This is entirely up to you and how many processes your computer can handle.
