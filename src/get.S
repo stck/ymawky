@@ -298,18 +298,18 @@ get:
 
     bl get_setup
 
-    ;; if the file is 0 bytes long, let's skip the mmap and all that. just
-    ;; close the file. x0 from get_setup
-    cbz x0, Lget_end
-
-    ;; let's save file length into x13! please? we need to use it but only in
+    ;; let's save file length into x19! please? we need to use it but only in
     ;; this func -- i really don't wanna do more stack shit here...
-    mov x13, x0
+    mov x19, x0
 
     mov x0, x20
     mov x1, x21
     bl parse_range
-    b.cs Lno_range ; no range
+    b.cs Lno_range
+
+    ;; here there be range
+    ;; empty file has no satisfiable range
+    ;cbz x19, L416
 
     mov x22, x0
     mov x23, x1
@@ -317,39 +317,66 @@ get:
     cmn x22, #1
     b.eq Lsuffix_range
 
+    ;; non-suffix ranges on empty files are unsatisfiable
+    cbz x19, L416
+
     cmn x23, #1
     b.eq Lopen_range
 
     ;; if we're here, both are concrete.
-    sub x1, x13, #1
+    ;; bytes=X-N
+    cmp x22, x19
+    b.hs L416
+
     ;; if x23 > filesize - 1, set it to filesize - 1 so we don't read other
     ;; memory.
+    sub x1, x19, #1
     cmp x23, x1
     csel x23, x1, x23, hi
     b Lbuild_ranged_header
 
 Lsuffix_range:
-    ;; if range is bigger than the file, just return the whole file.
-    cmp x23, x13
-    b.gt Lno_range
+    ;; bytes=-X
+    ;; Range: bytes=-0 is unsatisfiable.
+    cbz x23, L416
 
-    ; Range: bytes=-50 means file_len - 50
-    sub x22, x13, x23 ; start = len - range
-    sub x23, x13, #1 ; end = fiolesize - 1 (inclusive)
+    ;; bytes=-X on an empty file should be 200, not 206. just serve the whole
+    ;; file :)
+    cbz x19, Lno_range
+
+    ;; if range is less than file length, handle it at 1f
+    cmp x23, x19
+    b.lo 1f
+
+    ;; if range is bigger than or equal to the file size, just return the
+    ;; whole file.
+    mov x22, #0
+    sub x23, x19, #1
+    b Lbuild_ranged_header
+
+1:
+    ;; Range: bytes=-50 means file_len - 50
+    sub x22, x19, x23 ; start = len - range
+    sub x23, x19, #1 ; end = fiolesize - 1 (inclusive)
     b Lbuild_ranged_header
 
 Lopen_range:
+    ;; bytes=X-
+    ;; if X >= filesize, it's not satisfiable :(
+    cmp x22, x19
+    b.hs L416
+
     ;; if it's bytes=N-, start range remains unchanged, but end becomes
     ;; file_len - 1
-    sub x23, x13, #1
+    sub x23, x19, #1
     b Lbuild_ranged_header
-    
+
 Lno_range:
     ;; just pretend start = 0, end = file_length.
     mov x22, #0
-    sub x23, x13, #1
+    sub x23, x19, #1
 
-    mov x0, x13
+    mov x0, x19
     mov x1, #-1
     mov x2, #-1
     bl build_header
@@ -359,23 +386,24 @@ Lno_range:
 
 Lbuild_ranged_header:
     ;; if start range >= filesize, that's unsatisfiable
-    cmp x22, x13
-    b.ge L416
+    cmp x22, x19
+    b.hs L416
 
-    mov x0, x13
+    mov x0, x19
     mov x1, x22
     mov x2, x23
     bl build_header
     b.cs L500
     ;; fallthrough
 
-    ;; if filesize is 0, just print the header, hehe, skip the mmap
-    cbz x13, 1f
 Lmmap_start:
+    ;; if filesize is 0, just print the header, hehe, skip the mmap
+    cbz x19, 1f
+
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
     mov x0, #0
-    mov x1, x13
+    mov x1, x19
     mov x2, #1 ; PROT_READ
     mov x3, #2 ; MAP_PRIVATE
     ldr_l x4, file_des ; file descriptor
@@ -396,10 +424,10 @@ Lmmap_start:
 
     ;; if filesize is 0, the mmap'd registers are unitialized, and the file is
     ;; empty! so just skip this write
-    cbz x13, 2f
+    cbz x19, 2f
 
     ;; x12 -> pointer to mmap'd memory
-    ;; x13 -> total length of file
+    ;; x19 -> total length of file
     ;; x22 -> start range
     ;; x23 -> end range
     ldr_l x0, clientfd
@@ -409,13 +437,13 @@ Lmmap_start:
     bl write_all
 2:
     ;; likewise if filesize is 0, we don't need to munmap. just close!
-    cbz x13, Lget_end
+    cbz x19, Lget_end
     b Lwrite_done
 
 Lwrite_done:
     mov x16, SYS_munmap
     mov x0, x12
-    mov x1, x13
+    mov x1, x19
     svc #0x80
     ;; if munmap fails, b.cs would just branch to Lget_end anyway. so just
     ;; fall through either way.
