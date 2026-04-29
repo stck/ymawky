@@ -24,10 +24,17 @@
 ;; this table is offset by 40 bytes per entry; 8 bytes for the extension, and
 ;; 32 bytes for the MIME type string.
 file_types:
+    ;; web stuff
     mime_entry ".html",  "text/html; charset=utf-8"
     mime_entry ".css",   "text/css; charset=utf-8"
+    mime_entry ".xml",   "text/xml; charset=utf-8"
     mime_entry ".js",    "text/javascript; charset=utf-8"
     mime_entry ".json",  "application/json"
+    mime_entry ".wasm",  "application/wasm"
+    mime_entry ".mfs",   "text/javascript; charset=utf-8"
+    mime_entry ".map",   "application/json"
+
+    ;; image
     mime_entry ".png",   "image/png"
     mime_entry ".jpg",   "image/jpeg"
     mime_entry ".jpeg",  "image/jpeg"
@@ -35,12 +42,33 @@ file_types:
     mime_entry ".svg",   "image/svg+xml"
     mime_entry ".ico",   "image/x-icon"
     mime_entry ".webp",  "image/webp"
+    mime_entry ".avif",  "image/avif"
+
+    ;; fonts
+    mime_entry ".woff",  "font/woff"
+    mime_entry ".woff2", "font/woff2"
+    mime_entry ".ttf",   "font/ttf"
+    mime_entry ".otf",   "font/otf"
+
+    ;; misc files
     mime_entry ".txt",   "text/plain; charset=utf-8"
     mime_entry ".pdf",   "application/pdf"
-    mime_entry ".woff2", "font/woff2"
-    mime_entry ".xml",   "text/xml; charset=utf-8"
 
-    ;; sentinel: empty extension = end of table
+    ;; video
+    mime_entry ".mp4",   "video/mp4"
+    mime_entry ".webm",  "video/webm"
+
+    ;; audio
+    mime_entry ".mp3",   "audio/mpeg"
+    mime_entry ".ogg",   "audio/ogg"
+    mime_entry ".wav",   "audio/wav"
+
+    ;; archives
+    mime_entry ".zip",   "application/zip"
+    mime_entry ".gz",    "application/gzip"
+    mime_entry ".tar",   "application/x-tar"
+
+    ;; empty extension = end of table
     .byte 0
 
 unknown_ct: .ascii "text/plain; charset=utf-8"
