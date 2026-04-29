@@ -380,7 +380,7 @@ read_failed:
     svc #0x80
 
     adr_l x0, buf
-    mov x1, x24
+    mov x1, x23
     bl verify_http_version
 
     ;; check if we got a GET request. if so, jump to get!
@@ -437,7 +437,7 @@ read_failed:
 
 Lget_method:
     adr_l x0, buf
-    mov x1, x24
+    mov x1, x23
     b get
 
 Lput_method:

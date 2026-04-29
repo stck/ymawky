@@ -23,8 +23,10 @@ delete:
     cbnz x0, Ldelete_stat_failed
     cb ne, w1, #S_IFREG, L403
 
-    mov x16, SYS_unlink
-    ldr_l x0, filename_str
+    mov x16, SYS_unlinkat
+    mov x0, #AT_FDCWD
+    ldr_l x1, filename_str
+    mov x2, #AT_SYMLINK_NOFOLLOW_ANY
     svc #0x80
     b.cs Lunlink_failed
 
@@ -47,6 +49,8 @@ Lunlink_failed:
     cb eq, x0, #EROFS, L403
     ;; file is busy/conflict
     cb eq, x0, #EBUSY, L409
+    ;; symlink
+    cb eq, x0, #ELOOP, L403
 
     ;; just default to 500
     b reply_500

@@ -282,7 +282,6 @@ Lput_sigalrm_handler:
 
     b reply_408
 
-
 ;; if we read 0 bytes, check if we were actually done reading. if
 ;; content-length bytes had not been read total, the client hung up in the
 ;; middle. if that happens, check if we created a new file. if we did, unlink

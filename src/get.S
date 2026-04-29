@@ -369,6 +369,8 @@ Lbuild_ranged_header:
     b.cs L500
     ;; fallthrough
 
+    ;; if filesize is 0, just print the header, hehe, skip the mmap
+    cbz x13, 1f
 Lmmap_start:
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
@@ -379,17 +381,22 @@ Lmmap_start:
     ldr_l x4, file_des ; file descriptor
     mov x5, #0 ; offset
     svc #0x80
-    b.cs Lget_end
+    b.cs L500
     ;; x0 is now the pointer to memory for the file
 
     ;; stash the pointer somewhere safe
     mov x12, x0
 
+1:
     ldr_l x0, clientfd
     adr_l x1, header_buf
     ldr_l x2, header_len
     bl write_all
     b.cs 2f ; if header write failed, don't bother writing the body
+
+    ;; if filesize is 0, the mmap'd registers are unitialized, and the file is
+    ;; empty! so just skip this write
+    cbz x13, 2f
 
     ;; x12 -> pointer to mmap'd memory
     ;; x13 -> total length of file
@@ -401,6 +408,8 @@ Lmmap_start:
     add x2, x2, #1
     bl write_all
 2:
+    ;; likewise if filesize is 0, we don't need to munmap. just close!
+    cbz x13, Lget_end
     b Lwrite_done
 
 Lwrite_done:

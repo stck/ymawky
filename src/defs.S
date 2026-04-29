@@ -47,6 +47,7 @@
 .equ SYS_mmap,         197
 .equ SYS_stat64,       338
 .equ SYS_fstat64,      339
+.equ SYS_unlinkat,     472
 .equ SYS_renameatx_np, 488
 
 ;; constants
@@ -92,6 +93,7 @@
 .equ O_TRUNC,        0x0400
 .equ O_NOFOLLOW_ANY, 0x20000000
 
-;; stuff for renameatx_np()
+;; stuff for renameatx_np() and unlinkat()
 .equ RENAME_NOFOLLOW_ANY, 0x00000010
+.equ AT_SYMLINK_NOFOLLOW_ANY, 0x0800
 .equ AT_FDCWD, -2
