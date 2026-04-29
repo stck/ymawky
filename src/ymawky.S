@@ -60,6 +60,17 @@ brew_req:
     .ascii "BREW "
 .equ brew_req_len, . - brew_req
 
+http_: .ascii "HTTP/"
+.equ http_len, . - http_
+
+http_1_0: .ascii "HTTP/1.0"
+.equ http_1_0_len, . - http_1_0
+
+http_1_1: .ascii "HTTP/1.1"
+.equ http_1_1_len, . - http_1_1
+
+host_str: .ascii "Host"
+.equ host_str_len, . - host_str
 
 .bss
 .align 3
@@ -355,6 +366,10 @@ read_failed:
     adr_l x1, buf
     svc #0x80
 
+    adr_l x0, buf
+    mov x1, x24
+    bl verify_http_version
+
     ;; check if we got a GET request. if so, jump to get!
     adr_l x0, buf
     adr_l x1, get_req
@@ -459,7 +474,100 @@ fatal_exit:
     svc #0x80
 
 
+;; verify the header has an HTTP version and that it's 1.1 or 1.0
+;; if it's 1.1, ensure we have a Host: field.
+;; input
+;; x0 -> header buffer
+;; x1 -> header length
+;;
+;; returns
+;; nothing, kills process on failure
+verify_http_version:
+    stp x29, x30, [sp, #-32]!
+    stp x20, x21, [sp, #16]
+
+    mov x20, x0
+    mov x21, x1
+
+    mov x0, #0
+1:
+    ldrb w1, [x20, x0]
+    cmp w1, #'\r'
+    b.ne 2f
+
+    add x0, x0, #1
+    cmp x0, x21
+    b.ge L400
+
+    ldrb w1, [x20, x0]
+    cmp w1, #'\n'
+    b.eq 3f
+
+2:
+    add x0, x0, #1
+    cmp x0, x21
+    b.ge L400
+    b 1b
+
+3:
+    ;; gotta have at least 9 bytes to hold HTTP/1.1\r
+    cmp x0, #9
+    b.lt L400
+
+    ;; x0 points to the index of the \n in \r\n.
+    sub x9, x0, #9
+    ;; now it should point to where the "H" would be.
+
+    ;; HTTP/1.1
+    add x0, x20, x9
+    adr_l x1, http_1_1
+    mov x2, http_1_1_len
+    bl streqn
+    cmp x0, #1
+    b.eq Lhttp11
+
+    ;; HTTP/1.0
+    add x0, x20, x9
+    adr_l x1, http_1_0
+    mov x2, http_1_0_len
+    bl streqn
+    cmp x0, #1
+    b.eq Lhttp10
+
+    ;; some other http version?
+    add x0, x20, x9
+    adr_l x1, http_
+    mov x2, http_len
+    bl streqn
+    cmp x0, #1
+    b.eq L505
+
+    ;; oops. none.
+    b reply_400
+
+Lhttp11:
+    ;; if it's 1.1, we need a Host: field.
+    mov x0, x20
+    mov x1, x21
+    adr_l x2, host_str
+    mov x3, host_str_len
+    bl get_header_field
+    b.cs L400
+
+    b vh_epilogue
+
+Lhttp10:
+    ;; HTTP/1.0 doesn't need Host:
+    b vh_epilogue
+
+vh_epilogue:
+    ldp x20, x21, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
+
+L400: b reply_400
 L408: b reply_408
 L418: b reply_418
 L431: b reply_431
 L500: b reply_500
+L505: b reply_505

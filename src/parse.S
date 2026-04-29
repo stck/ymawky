@@ -10,6 +10,7 @@
 .global parse_content_length
 .global make_tmp_file
 .global do_path_checks
+.global get_header_field
 
 ;; this is PATH_MAX
 .equ filename_buf_size, 4096

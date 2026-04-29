@@ -19,6 +19,7 @@
 .global reply_431
 .global reply_500
 .global reply_501
+.global reply_505
 .global reply_507
 .global handle_fs_error
 
@@ -67,6 +68,9 @@ header_500: .ascii "HTTP/1.1 500 Internal Server Error"
 
 header_501: .ascii "HTTP/1.1 501 Not Implemented"
 .equ header_501_len, . - header_501
+
+header_505: .ascii "HTTP/1.1 505 HTTP Version Not Supported"
+.equ header_505_len, . - header_505
 
 header_507: .ascii "HTTP/1.1 507 Insufficient Storage"
 .equ header_507_len, . - header_507
@@ -164,6 +168,11 @@ reply_500:
 reply_501:
     adr_l x3, header_501
     mov x4, header_501_len
+    b send_reply
+
+reply_505:
+    adr_l x3, header_505
+    mov x4, header_505_len
     b send_reply
 
 reply_507:
