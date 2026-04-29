@@ -1,8 +1,9 @@
 ;; util.S
-;; small generic helpers: itoa, atoi, atoi_n, memcpy, strlen.
+;; small generic helpers 
 
 #include "defs.S"
 
+.global write_all
 .global itoa
 .global atoi
 .global atoi_n
@@ -17,6 +18,51 @@ itoa_buf: .skip 20
 
 .text
 .align 2 ;; instructions need 4-byte alignment
+
+;; write content to a file descriptor, retrying in case of partial-writes.
+;; input (same as write() syscall)
+;; x0 -> file descriptor
+;; x1 -> buffer
+;; x2 -> nbytes
+;;
+;; output
+;; x0 -> number of bytes written, total.
+write_all:
+    stp x25, x26, [sp, #-16]!
+    mov x25, x0 ; save x0 into x20
+    mov x26, #0
+1:
+    ; carry = 0, in case we exit with cbz without ever calling write().
+    cmn xzr, xzr
+    cbz x2, 2f
+
+    mov x16, SYS_write
+    mov x0, x25
+    ; x1 is set by caller
+    ; x2 is also set by caller
+    svc #0x80
+    b.cs Lwrite_fail
+
+    sub x2, x2, x0 ; subtract written bytes
+    add x26, x26, x0 ; increment total bytes written
+    add x1, x1, x0 ; increment pointer
+    b 1b
+
+2:
+    mov x0, x26 ; return total bytes written
+
+3:
+    ldp x25, x26, [sp], #16
+    ret
+
+Lwrite_fail:
+    cmp x0, #EINTR
+    b.eq 1b
+
+    cmp xzr, xzr ; set C=1 so we can b.cs
+    ;; x0 is already errno
+    b 3b
+
 
 ;; convert integer into non-NULL-terminated string.
 ;; input
@@ -191,6 +237,10 @@ streqn_i:
     cmp w3, #0
     ccmp w4, #0, #0, eq  ; if w3 == NULL, check if w4 is also NULL
     b.eq Lstreqn_i_match ; if they're both NULL, it's a match!
+    ;; if we're here, they're not *both* NULL. but if *ONE* is NULL, we should
+    ;; exit - not a match :(
+    cbz w3, Lstreqn_i_no_match
+    cbz w4, Lstreqn_i_no_match
 
     ;; make them both lowercase by OR'ing with 0x20, doesn't affect other
     ;; characters than alphabetical.

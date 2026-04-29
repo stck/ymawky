@@ -27,6 +27,7 @@ good_response_tail:
 file_des:    .skip 8
 .equ header_buf_size, 512
 header_buf:  .skip header_buf_size
+header_len:  .skip 8
 
 .text
 .align 2
@@ -37,9 +38,9 @@ header_buf:  .skip header_buf_size
 ;; x0 -> file length
 ;;
 ;; output
-;; x0 -> 0 on success, 1 if write() failed, 2 if resulting header would be
-;;       too large.
-write_header:
+;; x0 -> header buffer
+;; x1 -> header length
+build_header:
     stp x29, x30, [sp, #-32]!
     str x20, [sp, #16]
     mov x20, x0
@@ -97,37 +98,19 @@ write_header:
     cb gt, x14, header_buf_size, Lheader_too_big
     bl memcpy
 
-    adr_l x10, header_buf ; beginning of header_buf
-    ;; fall through to head_write_loop
-Lhead_write_loop:
-    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
-    ;; loop.
-    cbz x14, Lhead_write_done
-
-    ;; write(clientfd, mmap_ptr, size)
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    mov x1, x10
-    mov x2, x14
-    svc #0x80
-    b.cs Lhead_write_failed
-
-    ; x0 -> bytes written
-    add x10, x10, x0 ; advance the pointer by x0 bytes
-    sub x14, x14, x0 ; and decrease remaining bytes by x0 bytes
-    b Lhead_write_loop
-
-Lhead_write_done:
-    mov x0, #0
-    b Lhw_epilogue
-Lhead_write_failed:
-    mov x0, #1
-    b Lhw_epilogue
+    b Lbh_done
 Lheader_too_big:
-    mov x0, #2
-    b Lhw_epilogue
+    mov x0, #0
+    str_l x0, header_len
+    cmp xzr, xzr ; set carry
+    b Lbh_epilogue
 
-Lhw_epilogue:
+Lbh_done:
+    str_l x14, header_len
+    cmn xzr, xzr ; clear carry
+    b Lbh_epilogue
+
+Lbh_epilogue:
     ldr x20, [sp, #16]
     ldp x29, x30, [sp], #32
     ret
@@ -167,17 +150,15 @@ get_setup:
     ; x2 should be the file length from fstat64(). store it in x20
     mov x0, x2
     mov x20, x2
-    bl write_header
-
-    ;; if write_header returned 2, that means header was too large for some
+    bl build_header
+    ;; if build_header set carry, that means header was too large for some
     ;; reason. 500.
-    cmp x0, #2
-    b.eq L500
-    ;; otherwise if it's 1, that means a write failed somewhere. just give up
-    cmp x0, #1
-    b.eq Lgs_end ; wire broke :(
+    b.cs L500
 
     ;; if it returned 0 it's good :3
+    ;; save x0 (header buffer) and x1 (header len) for use later
+    ;str_l x0, header_buf
+    ;str_l x1, header_len
     b Lgs_epilogue
 
 Lgs_end:
@@ -197,6 +178,16 @@ Lgs_epilogue:
 ;; for HEAD, reply with just the header. pretty short n sweet.
 head:
     bl get_setup ;; this does basically everything we want.
+
+    ldr_l x0, clientfd
+    adr_l x1, header_buf
+    ldr_l x2, header_len
+bp1:
+    bl write_all
+    ;; it's ok to ignore write errors here, since if we get an error the way to
+    ;; handle it would be to close the file descriptor and b child_end, which
+    ;; is what we're doing here anyway. can't write 500 Internal Server Error
+    ;; in the middle of another header, lol.
 
     ;; we really just gotta close the file and exit
     mov x16, SYS_close
@@ -232,31 +223,44 @@ get:
     ;; stash the pointer somewhere safe
     mov x12, x0
 
+    ldr_l x0, clientfd
+    adr_l x1, header_buf
+    ldr_l x2, header_len
+    bl write_all
+    b.cs 2f ; if header write failed, don't bother writing the body
+
+    ldr_l x0, clientfd
+    mov x1, x12
+    mov x2, x13
+    bl write_all
+2:
+    b Lwrite_done
+
     ;; x12 -> pointer to mmap'd memory
     ;; x13 -> total length of file
-    mov x10, x12  ; current position
-    mov x11, x13 ; remaining bytes
-Lwrite_loop:
-    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
-    ;; loop.
-    cbz x11, Lwrite_done
-
-    ;; write(clientfd, mmap_ptr, size)
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    mov x1, x10
-    mov x2, x11
-    svc #0x80
-    b.cs Lwrite_error
-
-    ; x0 -> bytes written
-    add x10, x10, x0 ; advance the pointer by x0 bytes
-    sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
-    b Lwrite_loop
-
-Lwrite_error:
-    cmp x0, #EINTR
-    b.eq Lwrite_loop
+;    mov x10, x12  ; current position
+;    mov x11, x13 ; remaining bytes
+;Lwrite_loop:
+;    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
+;    ;; loop.
+;    cbz x11, Lwrite_done
+;
+;    ;; write(clientfd, mmap_ptr, size)
+;    mov x16, SYS_write
+;    ldr_l x0, clientfd
+;    mov x1, x10
+;    mov x2, x11
+;    svc #0x80
+;    b.cs Lwrite_error
+;
+;    ; x0 -> bytes written
+;    add x10, x10, x0 ; advance the pointer by x0 bytes
+;    sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
+;    b Lwrite_loop
+;
+;Lwrite_error:
+;    cmp x0, #EINTR
+;    b.eq Lwrite_loop
 
 Lwrite_done:
     mov x16, SYS_munmap

@@ -9,7 +9,9 @@
 .global child_end
 
 ;; How many seconds total for the header before timing out?
-.equ header_req_timeout_secs, 1
+.equ header_req_timeout_secs, 15
+;; how many active concurrent processes should be allowed?
+.equ MAX_PROCS, 256
 
 .data
 .align 3
@@ -66,6 +68,7 @@ brew_req:
 .bss
 .align 3
 sockfd:             .skip 8
+procs:              .skip 8
 
 .text
 .align 2
@@ -155,9 +158,12 @@ Lreap:
     cmp x0, #0  ; if we reaped some children, there might be more
     b.le 1f
 
+    ldr_l x10, procs
+    sub x10, x10, #1
+    str_l x10, procs
+
     b Lreap
 1:
-
     ;; accept(sockfd, NULL, NULL)
     mov x16, SYS_accept
     ldr_l x0, sockfd
@@ -169,17 +175,35 @@ Lreap:
     ;; store x0 (return of accept) in clientfd
     str_l x0, clientfd
 
-    ;; TODO set a sock opt for read timeout? after accept? SO_RCVTIMEO?
-
     ;; we check if x28 is set, indicated "d" was passed to cli. if it was, skip
     ;; fork -- it's much easier to debug with lldb if there's no forking :(
     cbnz x28, child
 
+    ldr_l x0, procs
+    cmp x0, #MAX_PROCS
+    b.lo 8f
+    ;; uh-oh, we're at the max processes. just close clientfd and loop.
+    mov x16, SYS_close
+    ldr_l x0, clientfd
+    svc #0x80
+    b loop
+
+8:
+    ldr_l x0, procs
+    add x0, x0, #1
+    str_l x0, procs
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
-    b.cs 2f
+    b.cc 3f ;; fork succeeded, skip the error handling!
 
+    ;; fork failed :( fuck :( decrement proc counter
+    ldr_l x0, procs
+    sub x0, x0, #1
+    str_l x0, procs
+    b 2f ; close n loop again
+
+3:
     ;; if we're in the child, go there
     ;; NOTE
     ;; on macos, fork() returns the pid of the child process in x0 in the

@@ -28,48 +28,6 @@ tmp_fd:               .skip 8
 .text
 .align 2
 
-;; write content to a file descriptor, retrying in case of partial-writes.
-;; input (same as write() syscall)
-;; x0 -> file descriptor
-;; x1 -> buffer
-;; x2 -> nbytes
-;;
-;; output
-;; x0 -> number of bytes written, total.
-write_all:
-    stp x25, x26, [sp, #-16]!
-    mov x25, x0 ; save x0 into x20
-    mov x26, #0
-    ; carry = 0, in case we exit with cbz without ever calling write().
-    adds xzr, xzr, xzr
-1:
-    cbz x2, 2f
-
-    mov x16, SYS_write
-    mov x0, x25
-    ; x1 is set by caller
-    ; x2 is also set by caller
-    svc #0x80
-    b.cs Lwrite_fail
-
-    sub x2, x2, x0 ; subtract written bytes
-    add x26, x26, x0 ; increment total bytes written
-    add x1, x1, x0 ; increment pointer
-    b 1b
-
-2:
-    mov x0, x26 ; return total bytes written
-
-    ldp x25, x26, [sp], #16
-    ret
-
-Lwrite_fail:
-    cmp x0, #EINTR
-    b.eq 1b
-
-    cmp xzr, xzr ; set C=1 so we can b.cs
-    b 2b
-
 
 ;; handle "PUT /" method.
 ;; input
@@ -136,9 +94,7 @@ Ltarget_missing:
     orr x1, x1, #O_NOFOLLOW_ANY
     mov x2, #0644 ; rw-r--r--
     svc #0x80
-    ;; ironically i can just branch to the stat failed label for open(), since
-    ;; the errnos and their causes are largely the same.
-    b.cs Lput_stat_failed
+    b.cs Lhfs_err
     mov x25, x0 ;; save fd into x25
     str_l x0, tmp_fd
 
@@ -354,6 +310,14 @@ Lput_read_zero:
     b reply_400
 
 Lput_done:
+    ;; disarm the timer
+    mov x16, SYS_setitimer
+    mov x0, #0
+    adr_l x1, put_read_timer
+    str xzr, [x1, #16] ; offset 16 = it_value.tv_sec
+    mov x2, #0
+    svc #0x80
+
     mov x16, SYS_close
     mov x0, x25
     svc #0x80
@@ -423,4 +387,4 @@ L411: b reply_411
 L413: b reply_413
 L500: b reply_500
 Lchild_end: b child_end
-;Lhfs_err: b handle_fs_error
+Lhfs_err: b handle_fs_error

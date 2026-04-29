@@ -219,9 +219,31 @@ Lskip_ws:
     b.eq Lskip_ws
     ;; got past the whitespace
 
-    ;; get the length of numbers
-    mov x0, x21
+Lskip_leading_zeroes:
+    ldrb w2, [x19, x21]
+    cmp w2, #'0'
+    b.ne 1f ;; not a zero so lets get the content length for real!
+
+    ;; hm it is a zero. is it the last zero? peak at da next char
+    add x3, x21, #1
+    cmp x3, x20
+    b.ge 1f ; if it's the end of the string, don't skip this zero
+
+    ldrb w3, [x19, x3]
+    cmp w3, #'0'
+    b.lt 1f ;; if the next char is < 0, like \r, keep it and count
+    cmp w3, #'9'
+    b.gt 1f ;; likewise if the char is > 9
+
+    ;; if we're here, the current char is 0 and the next char is also a digit.
+    ;; skip it to skip leading zeroes!
+    add x21, x21, #1
+    b Lskip_leading_zeroes
+
+1:
+    mov x0, x21 ; x21 points to the true start of the number, after leading 0s
     mov x1, #0
+
 Lget_cl_len:
     ldrb w2, [x19, x0]
     cmp w2, #'0'
