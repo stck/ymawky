@@ -25,12 +25,6 @@
     b.\cond \l
 .endm
 
-;; default directory to PUT/GET files from. change this if you'd like a dir
-;; other than "./www/". relative to ymawky's environment.
-.macro default_dir
-    .ascii "www/"
-.endm
-
 ;; syscalls
 .equ SYS_exit,         1
 .equ SYS_fork,         2
@@ -60,7 +54,6 @@
 
 ;; stuff for file.S
 .equ S_IFREG,        0x8000
-.equ S_IFDIR,        0x4000
 
 ;; errno values
 .equ EPERM,          1
