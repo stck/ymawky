@@ -60,6 +60,7 @@ brew_req:
     .ascii "BREW "
 .equ brew_req_len, . - brew_req
 
+
 .bss
 .align 3
 sockfd:             .skip 8

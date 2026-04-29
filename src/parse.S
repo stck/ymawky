@@ -433,76 +433,24 @@ parse_content_length:
     mov x21, #0  ; index
     mov x22, #-1 ; value, sentinel -1 = not found yet
 
-pcl_scan:
-    cmp x21, x20
-    b.ge pcl_done
+    ;; x0 is already set
+    ;; x1 is already set
+    adr_l x2, content_len_match_str
+    mov x3, content_len_match_len
+    bl get_header_field
+    b.cs pcl_err
 
-    ldrb w2, [x19, x21]
-    cmp w2, #'\r'
-    b.ne Lscan_again
+    mov x19, x0
+    mov x20, x1
 
-    add x21, x21, #1
-    cmp x21, x20
-    b.ge pcl_done
-
-    ldrb w2, [x19, x21]
-    cmp w2, #'\n'
-    b.ne pcl_scan ; x21 already advanced. lone \r, so keep scanning.
-
-    ;; we're at \r\n, next line begins at x21+1
-    add x21, x21, #1
-    cmp x21, x20
-    b.ge pcl_done
-
-    ldrb w2, [x19, x21]
-    cmp w2, #' '
-    b.eq L400
-    cmp w2, #'\t'
-    b.eq L400
-
-    ;; if (length - index) < strlen("content-length:"), end of header is too
-    ;; soon.
-    sub x3, x20, x21
-    cmp x3, #content_len_match_len
-    b.lt pcl_done
-
-    add x0, x19, x21
-    adr_l x1, content_len_match_str
-    mov x2, #content_len_match_len
-    bl streqn_i
-
-    cmp x0, #0
-    b.eq Lscan_again
-
-    ;; if we're here, it was a match!
-    ;; let's just make sure the sentinel isn't already set, as in, we haven't
-    ;; already found a separate content-length header field, and this is a
-    ;; duplicate.
-    cmp x22, #-1
-    b.ne pcl_malformed
-
-    add x21, x21, #content_len_match_len
-    cmp x21, x20
-    b.ge pcl_done
-
-    ;; make sure "content-length" is followed immediately by a ":", otherwise
-    ;; reject it.
-    ldrb w2, [x19, x21]
-    cmp w2, #':'
-    b.ne Lscan_again
-
-Lskip_ws:
-    ;; gotta bounds check on every byte. got i hate string parsing!
-    add x21, x21, #1
-    cmp x21, x20
-    b.ge pcl_done
-
-    ldrb w2, [x19, x21]
-    cmp w2, #' '
-    b.eq Lskip_ws
-    cmp w2, #'\t'
-    b.eq Lskip_ws
-    ;; got past the whitespace
+    ;; check if there's duplicate content-length fields... if there are, it's
+    ;; a malformed request. oops!
+    mov x0, x19
+    mov x1, x20
+    adr_l x2, content_len_match_str
+    mov x3, content_len_match_len
+    bl get_header_field
+    b.cc pcl_malformed
 
 Lskip_leading_zeroes:
     ldrb w2, [x19, x21]
@@ -577,11 +525,6 @@ Lgot_cl_len:
 
     ;; now x0 should be the length!
     mov x22, x0
-
-    ;; fall through to Lscan_again
-Lscan_again:
-    add x21, x21, #1
-    b pcl_scan
 
 pcl_done:
     cmp x22, #-1
