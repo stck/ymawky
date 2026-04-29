@@ -19,6 +19,8 @@ See [Configuration](#configuration) to modify the default file and docroot.
 
 Unfortunately, while custom ports are supported, custom addresses are not. as of right now, ymawky can only run on `127.0.0.1`. This is solely because I haven't implemented it -- but if you'd like to consider this a safety feature, then I guess it could be intentional.
 
+To see ymawky in action, start running ymawky with `./ymawky [port]`. Then open your web browser of choice (or use curl), and visit `127.0.0.1:8080/` or `127.0.0.1:8080/pretty/index.html`. Bask in the warmth of assembly.
+
 ## What can it do?
 ymawky is a static-file web server. It doesn't support server-side code to generate content on-the-fly, or more advanced URL parsing, such as `/search?query=term`. That's not to say it's non-functional, though.
 - Supported HTTP methods:
