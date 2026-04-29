@@ -437,13 +437,8 @@ Lempty_filename:
     ; the default file name, "index.html", is only for GET requests. if it's a
     ; DELETE/PUT/POST/anything else, just "www/" is enough. we'll let the
     ; system handle the error elsewhere if it causes problems.
-    ;cmp x20, HEAD_REQ_ID
-    ;b.eq 1f
     cbz x20, Lno_default_file
 
-    ;b Lno_default_file
-
-;1:
     adr_l x0, filename_buf
     ;; skip past the www/
     add x0, x0, x2

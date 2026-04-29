@@ -229,38 +229,14 @@ get:
     bl write_all
     b.cs 2f ; if header write failed, don't bother writing the body
 
+    ;; x12 -> pointer to mmap'd memory
+    ;; x13 -> total length of file
     ldr_l x0, clientfd
     mov x1, x12
     mov x2, x13
     bl write_all
 2:
     b Lwrite_done
-
-    ;; x12 -> pointer to mmap'd memory
-    ;; x13 -> total length of file
-;    mov x10, x12  ; current position
-;    mov x11, x13 ; remaining bytes
-;Lwrite_loop:
-;    ;; if we have 0 (or fewer) bytes remaining, skip to the end of the write
-;    ;; loop.
-;    cbz x11, Lwrite_done
-;
-;    ;; write(clientfd, mmap_ptr, size)
-;    mov x16, SYS_write
-;    ldr_l x0, clientfd
-;    mov x1, x10
-;    mov x2, x11
-;    svc #0x80
-;    b.cs Lwrite_error
-;
-;    ; x0 -> bytes written
-;    add x10, x10, x0 ; advance the pointer by x0 bytes
-;    sub x11, x11, x0 ; and decrease remaining bytes by x0 bytes
-;    b Lwrite_loop
-;
-;Lwrite_error:
-;    cmp x0, #EINTR
-;    b.eq Lwrite_loop
 
 Lwrite_done:
     mov x16, SYS_munmap

@@ -414,7 +414,6 @@ read_failed:
 Lget_method:
     ;mov x20, GET_REQ_ID
     b get
-    b child_end ; should never reach here, but just in case!
 
 Lput_method:
     ;mov x20, PUT_REQ_ID
@@ -422,22 +421,15 @@ Lput_method:
     mov x1, x23
     mov x2, x24
     b put
-    b child_end ; should never reach here, but just in case!
 
 Lhead_method:
-    ;mov x20, HEAD_REQ_ID
     b head
-    b child_end ; should never reach here, but just in case!
 
 Loptions_method:
-    ;mov x20, OPTIONS_REQ_ID
     b reply_204 ;; reply_* always return to child_end
-    b child_end ; should never reach here, but just in case!
 
 Ldelete_method:
-    ;mov x20, DELETE_REQ_ID
     b delete
-    b child_end ; should never reach here, but just in case!
 
 
 child_end:

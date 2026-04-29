@@ -179,6 +179,12 @@ reply_508:
 ;; no output.
 ;; clobbers x0-x3
 send_reply:
+    stp x29, x30, [sp, #-32]!
+    stp x19, x20, [sp, #16]
+
+    mov x19, x3
+    mov x20, x4
+
     ; write to stdout for logging
     mov x16, SYS_write
     mov x0, #1
@@ -186,26 +192,26 @@ send_reply:
     mov x2, x4
     svc #0x80
 
-    ; write to stdout
     mov x16, SYS_write
     mov x0, #1
     adr_l x1, header_tail
     mov x2, header_tail_len
     svc #0x80
 
-    ; write to socket
-    mov x16, SYS_write
+    ;; now write to the socket with write_all.
     ldr_l x0, clientfd
-    mov x1, x3
-    mov x2, x4
-    svc #0x80
+    mov x1, x19
+    mov x2, x20
+    bl write_all
 
-    ; write to socket
-    mov x16, SYS_write
+    ;; the end of the header
     ldr_l x0, clientfd
     adr_l x1, header_tail
     mov x2, header_tail_len
-    svc #0x80
+    bl write_all
+
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #32
 
     b child_end
 

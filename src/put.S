@@ -38,12 +38,6 @@ tmp_fd:               .skip 8
 ;; output
 ;; none, proc quits after handling.
 put:
-    stp x29, x30, [sp, #-80]!
-    stp x19, x20, [sp, #16]
-    stp x21, x22, [sp, #32]
-    stp x23, x24, [sp, #48]
-    stp x25, x26, [sp, #64]
-
     mov x19, #0 ; was file created? #0 = no, file existed, #1 = yes, new file
     mov x21, x1
     mov x22, x0
@@ -367,14 +361,6 @@ Lpcl_error:
 
     ;; should never reach here. but just in case!
     b L500
-
-put_epilogue:
-    ldp x25, x26, [sp, #64]
-    ldp x23, x24, [sp, #48]
-    ldp x21, x22, [sp, #32]
-    ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #80
-    b child_end
 
 
 ;; trampolines for conditional branches across files.
