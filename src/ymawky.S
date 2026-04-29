@@ -407,6 +407,8 @@ read_failed:
     b reply_501
 
 Lget_method:
+    adr_l x0, buf
+    mov x1, x24
     b get
 
 Lput_method:

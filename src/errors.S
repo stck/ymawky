@@ -11,6 +11,7 @@
 .global reply_404
 .global reply_408
 .global reply_409
+.global reply_416
 .global reply_411
 .global reply_413
 .global reply_414
@@ -25,7 +26,7 @@
 header_201: .ascii "HTTP/1.1 201 Created"
 .equ header_201_len, . - header_201
 
-header_204: .ascii "HTTP/1.1 204 No Content\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nServer: ymawky\r\n\r\n"
+header_204: .ascii "HTTP/1.1 204 No Content\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_204_len, . - header_204
 
 header_400: .ascii "HTTP/1.1 400 Bad Request"
@@ -52,6 +53,9 @@ header_413: .ascii "HTTP/1.1 413 Content Too Large"
 header_414: .ascii "HTTP/1.1 414 URI Too Long"
 .equ header_414_len, . - header_414
 
+header_416: .ascii "HTTP/1.1 416 Range Not Satisfiable"
+.equ header_416_len, . - header_416
+
 header_418: .ascii "HTTP/1.1 418 I'm a teapot"
 .equ header_418_len, . - header_418
 
@@ -68,7 +72,7 @@ header_507: .ascii "HTTP/1.1 507 Insufficient Storage"
 .equ header_507_len, . - header_507
 
 header_tail:
-    .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nServer: ymawky\r\n\r\n"
+    .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_tail_len, . - header_tail
 
 
@@ -135,6 +139,11 @@ reply_413:
 reply_414:
     adr_l x3, header_414
     mov x4, header_414_len
+    b send_reply
+
+reply_416:
+    adr_l x3, header_416
+    mov x4, header_416_len
     b send_reply
 
 reply_418:

@@ -6,6 +6,7 @@
 #include "defs.S"
 
 .global parse_header_end
+.global parse_range
 .global parse_content_length
 .global make_tmp_file
 .global do_path_checks
@@ -21,6 +22,13 @@ header_end: .ascii "\r\n\r\n"
 
 content_len_match_str: .ascii "content-length"
 .equ content_len_match_len, 14
+
+range_match_str: .ascii "range"
+.equ range_match_len, 5
+
+bytes_match_str: .ascii "bytes"
+.equ bytes_match_len, 5
+
 
 www_prefix: .ascii DEFAULT_DIR ;; DEFAULT_DIR from config.S
 .equ www_prefix_len, . - www_prefix
@@ -39,6 +47,8 @@ tmp_prefix_len_val: .quad tmp_prefix_len
 filename_buf: .skip filename_buf_size + 1
 .align 3 ;; fix broken alignment again
 filename_buf_tmp: .skip filename_buf_tmp_size + 1
+.align 3
+range_buf: .skip 19
 .align 3
 
 .text
@@ -130,6 +140,283 @@ mtf_epilogue:
     ret
 
 
+;; find header field
+;; x0 -> HTTP header from client
+;; x1 -> length of header
+;; x2 -> field to search for
+;; x3 -> length of x2
+;;
+;; return
+;; x0 -> pointer to the beginning of the header contents
+;; x1 -> remaining length in the header
+;; carry -> set if not found
+get_header_field:
+    stp x29, x30, [sp, #-64]!
+    stp x19, x20, [sp, #16]
+    stp x21, x23, [sp, #32]
+    str x24, [sp, #48]
+
+    mov x19, x0  ; headers
+    mov x20, x1  ; length
+    mov x21, #0  ; index
+    mov x23, x2  ; field string
+    mov x24, x3  ; field string length
+
+ghf_scan:
+    cmp x21, x20
+    b.ge ghf_not_found
+
+    ldrb w2, [x19, x21]
+    cmp w2, #'\r'
+    b.ne ghf_scan_again
+
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge ghf_not_found
+
+    ldrb w2, [x19, x21]
+    cmp w2, #'\n'
+    b.ne ghf_scan ; x21 already advanced. lone \r, so keep scanning.
+
+    ;; we're at \r\n, next line begins at x21+1
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge ghf_not_found
+
+    ;; lines can't begin with whitespace
+    ldrb w2, [x19, x21]
+    cmp w2, #' '
+    b.eq L400
+    cmp w2, #'\t'
+    b.eq L400
+
+    ;; if (length - index) < strlen(field), end of header is too
+    ;; soon.
+    sub x3, x20, x21
+    cmp x3, x24
+    b.lt ghf_not_found
+
+    add x0, x19, x21
+    mov x1, x23
+    mov x2, x24
+    bl streqn_i
+
+    cmp x0, #0
+    b.eq ghf_scan_again
+
+    ;; if we're here, it was a match!
+    add x21, x21, x24
+    ;; but if the header ends here, before even the :, it's malformed.
+    cmp x21, x20
+    b.ge L400
+
+    ;; make sure the field is followed immediately by a ":", otherwise reject
+    ;; it.
+    ldrb w2, [x19, x21]
+    cmp w2, #':'
+    b.ne L400
+
+ghf_skip_ws:
+    ;; gotta bounds check on every byte. got i hate string parsing!
+    add x21, x21, #1
+    cmp x21, x20
+    b.ge L400
+
+    ldrb w2, [x19, x21]
+    cmp w2, #' '
+    b.eq ghf_skip_ws
+    cmp w2, #'\t'
+    b.eq ghf_skip_ws
+    ;; got past the whitespace
+
+    ;; return x0 -> header+offset, start of content
+    mov x0, x19
+    add x0, x0, x21
+
+    ;; return x1 -> length-x21 = remaining length
+    sub x1, x20, x21
+    cmn xzr, xzr
+    b ghf_epilogue
+
+ghf_scan_again:
+    add x21, x21, #1
+    b ghf_scan
+
+ghf_not_found:
+    cmp xzr, xzr
+    mov x0, #0
+    mov x1, #0
+    b ghf_epilogue
+
+ghf_epilogue:
+    ldr x24, [sp, #48]
+    ldp x21, x23, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #64
+    ret
+
+
+;; parse Range: header line
+;; input
+;; x0 -> HTTP header from client
+;; x1 -> length of header
+;;
+;; return
+;; x0 -> start range (or -1)
+;; x1 -> end range (or -1).
+;; sets carry on error
+parse_range:
+    stp x29, x30, [sp, #-80]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
+    stp x25, x26, [sp, #64]
+
+    mov x19, x0
+    mov x20, x1
+    mov x21, #0 ; index
+
+    ;; x0 is already set
+    ;; x1 is already set
+    adr_l x2, range_match_str
+    mov x3, range_match_len
+    bl get_header_field
+    b.cs pr_no_range ; wasn't found, oh well!
+
+    mov x22, x0 ; pointer to beginning of data
+    mov x23, x1 ; remaining length in header field
+
+    mov x0, bytes_match_len
+    cmp x0, x23
+    b.ge pr_no_range
+
+    mov x21, x0 ; save this as offset now
+
+    ;; check if the next content is bytes
+    mov x2, x0
+    mov x0, x22
+    adr_l x1, bytes_match_str
+    bl streqn_i
+    cbz x0, pr_no_range
+
+    ldrb w0, [x22, x21]
+    cmp w0, #'='
+    b.ne pr_no_range
+
+    add x21, x21, #1
+    cmp x21, x23
+    b.ge pr_no_range
+
+    ;; now we know it's Range: bytes=
+    adr_l x2, range_buf
+    mov x24, #0
+pr_get_start_range:
+    ldrb w0, [x22, x21]
+    cmp w0, #'-'
+    b.eq Lpr_start_next
+    cmp w0, #'0'
+    b.lt pr_no_range
+    cmp w0, #'9'
+    b.gt pr_no_range
+
+    strb w0, [x2, x24]
+    add x24, x24, #1
+    cmp x24, #19
+    b.ge pr_no_range
+
+    add x21, x21, #1
+    cmp x21, x23
+    b.ge pr_no_range
+
+    b pr_get_start_range
+Lpr_start_next:
+    ;; check if the range was 0 bytes long, ie, immediately a '-'.
+    cmp x24, #0
+    b.eq 1f
+
+    mov x0, x2
+    mov x1, x24
+    bl atoi_n
+    b.cs pr_no_range
+    mov x25, x0
+    b pr_got_start
+1:
+    mov x25, #-1
+pr_got_start:
+    adr_l x2, range_buf
+    mov x24, #0
+
+pr_get_end_range:
+    add x21, x21, #1
+    cmp x21, x23
+    b.ge pr_no_range
+
+    ldrb w0, [x22, x21]
+    cmp w0, #'\r'
+    b.eq Lpr_end_next
+    cmp w0, #'0'
+    b.lt pr_no_range
+    cmp w0, #'9'
+    b.gt pr_no_range
+
+    strb w0, [x2, x24]
+    add x24, x24, #1
+    cmp x24, #19
+    b.ge pr_no_range
+
+    b pr_get_end_range
+Lpr_end_next:
+    ;; check if the range was 0 bytes long, ie, immediately a newline.
+    cmp x24, #0
+    b.eq 1f
+
+    mov x0, x2
+    mov x1, x24
+    bl atoi_n
+    b.cs pr_no_range
+    mov x26, x0
+    b pr_got_range
+1:
+    mov x26, #-1
+pr_got_range:
+    ;; both -1 is invalid (like Range: bytes=-)
+    cmn x25, #1
+    b.ne 1f
+    cmn x26, #1
+    b.eq pr_no_range
+
+1:
+    ;; if they're negative, don't compare if x25 > x26
+    cmn x25, #1
+    b.eq 2f
+    cmn x26, #1
+    b.eq 2f
+
+    ;; if end < start, it's invalid. ignored! blocked! loser!
+    cmp x25, x26
+    b.gt pr_no_range
+
+2:
+    ;; if we're here, the ranges are good!
+    mov x0, x25
+    mov x1, x26
+    cmn xzr, xzr
+    b pr_epilogue
+
+pr_no_range:
+    cmp xzr, xzr
+    mov x0, #0
+    mov x1, #0
+    b pr_epilogue
+
+pr_epilogue:
+    ldp x25, x26, [sp, #64]
+    ldp x23, x24, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #80
+    ret
+;; parse Content-Length: header line
 ;; input
 ;; x0 -> HTTP header from client
 ;; x1 -> length of header

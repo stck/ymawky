@@ -9,16 +9,24 @@
 .data
 .align 3
 
-head_response:
+head_200:
     .ascii "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
-.equ head_response_len, . - head_response
+.equ head_200_len, . - head_200
+
+head_206:
+    .ascii "HTTP/1.1 206 Partial Content\r\nConnection: close\r\nContent-Length: "
+.equ head_206_len, . - head_206
+
+head_content_range:
+    .ascii "\r\nContent-Range: bytes "
+.equ head_content_range_len, . - head_content_range
 
 head_content_type:
     .ascii "\r\nContent-Type: "
 .equ head_content_type_len, . - head_content_type
 
 good_response_tail:
-    .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nServer: ymawky\r\n\r\n"
+    .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ good_response_tail_len, . - good_response_tail
 
 .bss
@@ -35,31 +43,66 @@ header_len:  .skip 8
 ;; in a loop, accounting for partial-writes.
 ;; input
 ;; x0 -> file length
+;; x1 -> start range (or -1 if no range)
+;; x2 -> end range
 ;;
 ;; output
 ;; x0 -> header buffer
 ;; x1 -> header length
 build_header:
-    stp x29, x30, [sp, #-32]!
-    str x20, [sp, #16]
+    stp x29, x30, [sp, #-48]!
+    stp x20, x21, [sp, #16]
+    stp x22, x23, [sp, #32]
+
     mov x20, x0
+    mov x22, x1 ; start range
+    mov x23, x2 ; end range
 
     adr_l x13, header_buf
     mov x14, #0 ; counter of bytes writteen to header_buf
 
-    ;; copy "HTTP/1.1 200 OK...", beginning of header, to header_buf
+    cmn x1, #1
+    b.eq Lbh_200
+
+    ;; 206 path
+    ;; copy "HTTP/1.1 206 ...", beginning of header, to header_buf
     mov x0, x13
-    adr_l x1, head_response
-    mov x2, head_response_len
+    adr_l x1, head_206
+    mov x2, head_206_len
     ;; make sure we don't write past header_buf's memory!
     add x14, x14, x2
     cb gt, x14, header_buf_size, Lheader_too_big
     bl memcpy
     mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
 
-    mov x0, x20
-    bl itoa
+    b Lbh_content_length
 
+Lbh_200:
+    ;; copy "HTTP/1.1 200 OK...", beginning of header, to header_buf
+    mov x0, x13
+    adr_l x1, head_200
+    mov x2, head_200_len
+    ;; make sure we don't write past header_buf's memory!
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
+
+Lbh_content_length:
+    cmn x22, #1
+    b.eq 1f
+
+    ;; if we're sending a range, content-length should be end - start instead
+    sub x0, x23, x22
+    add x0, x0, #1
+    b 2f
+
+1:
+    ;; but if it's just a file, just grab the total file length.
+    mov x0, x20
+
+2:
+    bl itoa
     ;; copy content-length string into header_buf
     mov x2, x1  ; content_length_len (length of string)
     mov x1, x0  ; content_length_str
@@ -68,6 +111,69 @@ build_header:
     cb gt, x14, header_buf_size, Lheader_too_big
     bl memcpy
 
+    ;; skip all this stuff for no range
+    cmn x22, #1
+    b.eq Lbh_content_type
+
+    ;; 206 path
+    ;; write Content-Range: bytes
+    adr_l x1, head_content_range
+    mov x2, head_content_range_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; start range
+    mov x0, x22
+    bl itoa
+
+    mov x2, x1
+    mov x1, x0
+    mov x0, x13
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; -
+    add x14, x14, #1
+    cb gt, x14, header_buf_size, Lheader_too_big
+    mov w0, #'-'
+    strb w0, [x13]
+    add x13, x13, #1
+
+    ;; end range
+    mov x0, x23
+    bl itoa
+
+    mov x2, x1
+    mov x1, x0
+    mov x0, x13
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; /
+    add x14, x14, #1
+    cb gt, x14, header_buf_size, Lheader_too_big
+    mov w0, #'/'
+    strb w0, [x13]
+    add x13, x13, #1
+
+    ;; total size
+    mov x0, x20
+    bl itoa
+
+    mov x2, x1  ; content_length_len (length of string)
+    mov x1, x0  ; content_length_str
+    mov x0, x13 ; header_buf + offset
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+Lbh_content_type:
     ;; copy "\r\nContent-Type:" to buffer
     ; x0 is already set from previous memcpy
     adr_l x1, head_content_type
@@ -110,8 +216,9 @@ Lbh_done:
     b Lbh_epilogue
 
 Lbh_epilogue:
-    ldr x20, [sp, #16]
-    ldp x29, x30, [sp], #32
+    ldp x22, x23, [sp, #32]
+    ldp x20, x21, [sp, #16]
+    ldp x29, x30, [sp], #48
     ret
 
 
@@ -124,8 +231,7 @@ Lbh_epilogue:
 ;; NOTE this function opens a file and doesn't close it -- it saves the open
 ;; file descriptor in .bss, file_des. be sure to close it!
 get_setup:
-    stp x29, x30, [sp, #-32]!
-    str x20, [sp, #16]
+    stp x29, x30, [sp, #-16]!
 
     mov x0, #1 ;; yes, default to index.html if no file is given
     bl do_path_checks
@@ -146,29 +252,22 @@ get_setup:
     cmp w1, #S_IFREG
     b.ne L403
 
-    ; x2 should be the file length from fstat64(). store it in x20
-    mov x0, x2
-    mov x20, x2
-    bl build_header
-    ;; if build_header set carry, that means header was too large for some
-    ;; reason. 500.
-    b.cs L500
-
-    ;; if it returned 0 it's good :3
-    ;; save x0 (header buffer) and x1 (header len) for use later
-    b Lgs_epilogue
-
 Lgs_epilogue:
-    mov x0, x20
+    mov x0, x2
 
-    ldr x20, [sp, #16]
-    ldp x29, x30, [sp], #32
+    ldp x29, x30, [sp], #16
     ret
 
 
 ;; for HEAD, reply with just the header. pretty short n sweet.
 head:
     bl get_setup ;; this does basically everything we want.
+
+    ;; x0 is already set from get_setup
+    mov x1, #-1
+    mov x2, #-1
+    bl build_header
+    b.cs L500
 
     ldr_l x0, clientfd
     adr_l x1, header_buf
@@ -187,7 +286,16 @@ head:
 
 
 ;; do the "GET /" stuff."
+;; input
+;; x0 -> header received
+;; x1 -> length of header
+;;
+;; returns
+;; nothing ! :)
 get:
+    mov x20, x0
+    mov x21, x1
+
     bl get_setup
 
     ;; if the file is 0 bytes long, let's skip the mmap and all that. just
@@ -198,6 +306,70 @@ get:
     ;; this func -- i really don't wanna do more stack shit here...
     mov x13, x0
 
+    mov x0, x20
+    mov x1, x21
+    bl parse_range
+    b.cs Lno_range ; no range
+
+    mov x22, x0
+    mov x23, x1
+
+    cmn x22, #1
+    b.eq Lsuffix_range
+
+    cmn x23, #1
+    b.eq Lopen_range
+
+    ;; if we're here, both are concrete.
+    sub x1, x13, #1
+    ;; if x23 > filesize - 1, set it to filesize - 1 so we don't read other
+    ;; memory.
+    cmp x23, x1
+    csel x23, x1, x23, hi
+    b Lbuild_ranged_header
+
+Lsuffix_range:
+    ;; if range is bigger than the file, just return the whole file.
+    cmp x23, x13
+    b.gt Lno_range
+
+    ; Range: bytes=-50 means file_len - 50
+    sub x22, x13, x23 ; start = len - range
+    sub x23, x13, #1 ; end = fiolesize - 1 (inclusive)
+    b Lbuild_ranged_header
+
+Lopen_range:
+    ;; if it's bytes=N-, start range remains unchanged, but end becomes
+    ;; file_len - 1
+    sub x23, x13, #1
+    b Lbuild_ranged_header
+    
+Lno_range:
+    ;; just pretend start = 0, end = file_length.
+    mov x22, #0
+    sub x23, x13, #1
+
+    mov x0, x13
+    mov x1, #-1
+    mov x2, #-1
+    bl build_header
+    b.cs L500
+
+    b Lmmap_start
+
+Lbuild_ranged_header:
+    ;; if start range >= filesize, that's unsatisfiable
+    cmp x22, x13
+    b.ge L416
+
+    mov x0, x13
+    mov x1, x22
+    mov x2, x23
+    bl build_header
+    b.cs L500
+    ;; fallthrough
+
+Lmmap_start:
     ; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
     mov x16, SYS_mmap
     mov x0, #0
@@ -221,9 +393,12 @@ get:
 
     ;; x12 -> pointer to mmap'd memory
     ;; x13 -> total length of file
+    ;; x22 -> start range
+    ;; x23 -> end range
     ldr_l x0, clientfd
-    mov x1, x12
-    mov x2, x13
+    add x1, x12, x22
+    sub x2, x23, x22
+    add x2, x2, #1
     bl write_all
 2:
     b Lwrite_done
@@ -248,6 +423,8 @@ Lget_end:
 
 ;; trampolines for conditional branches to reply_* / handle_fs_error in other
 ;; files (b.cond / cbz can't reach across files; unconditional b can).
+L400: b reply_400
 L403: b reply_403
+L416: b reply_416
 L500: b reply_500
 Lhfs_err: b handle_fs_error
