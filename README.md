@@ -1,11 +1,11 @@
 ![ymawky](ymawky.png)
 
-# Ymawky -- *web server in ARM assembly*
-This is *ymawky*, a web server written entirely in ARM64 assembly. *ymawky* is a syscall-only, no libc, fork-per-connection web server written by hand. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some (hopefully minor) tweaks to get this to run on Linux/other Unix systems. See [Implementation Notes](#implementation-notes) for more details.
+# *ymawky* -- web server in ARM assembly
+This is *ymawky* (yuh maw kee), a web server written entirely in ARM64 assembly. ymawky is a syscall-only, no libc, fork-per-connection web server written by hand. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some ~~(hopefully minor)~~ Significant tweaks to get this to run on Linux/other Unix systems. See [Implementation Notes](#implementation-notes) for more details.
 
 ## Building
 Requires Xcode Command Line Tools. Install with `xcode-select --install`.
-*ymawky* only runs on apple silicon (arm64).
+ymawky only runs on apple silicon (arm64).
 
 Run `make` to build.
 Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where `ymawky` searches for files.
@@ -20,7 +20,7 @@ See [Configuration](#configuration) to modify the default file and docroot.
 Unfortunately, while custom ports are supported, custom addresses are not. as of right now, ymawky can only run on `127.0.0.1`. This is solely because I haven't implemented it -- but if you'd like to consider this a safety feature, then I guess it could be intentional.
 
 ## What can it do?
-Ymawky is a static-file web server. It doesn't support server-side code to generate content on-the-fly, or more advanced URL parsing, such as `/search?query=term`. That's not to say it's non-functional, though.
+ymawky is a static-file web server. It doesn't support server-side code to generate content on-the-fly, or more advanced URL parsing, such as `/search?query=term`. That's not to say it's non-functional, though.
 - Supported HTTP methods:
     - GET
     - PUT
@@ -54,7 +54,7 @@ This is a web server written entirely by-hand in ARM64 assembly as a fun project
 - Must receive data within 10 seconds. If it's slower, the connection will close. If the entire header is not received within 10 seconds total, the connection will be closed. This is to prevent slowloris-like attacks.
 
 ## HTTP Status Codes
-Ymawky currently supports and can reply with the following status codes:
+ymawky currently supports and can reply with the following status codes:
 - `200 OK`
 - `201 Created`
 - `204 No Content`
@@ -143,21 +143,21 @@ Archive files:
 - `.rar`   -> `application/vnd.rar`
 
 ## Configuration
-You can configure *ymawky* with the `config.S` file. The options are documented here.
-- `#define DEFAULT_DIR "www/"` -- This is the docroot. Change it to wherever your HTML files are, relative to *ymawky*, or use an absolute path:
+You can configure ymawky with the `config.S` file. The options are documented here.
+- `#define DEFAULT_DIR "www/"` -- This is the docroot. Change it to wherever your HTML files are, relative to ymawky, or use an absolute path:
   - `#define DEFAULT_DIR "www/"`
   - `#define DEFAULT_DIR "/Library/WebServer/Documents`
   - `#define DEFAULT_DIR "./"`
-- `#define DEFAULT_FILE "index.html"` -- This is the default file *ymawky* will serve when it receives an empty `GET / HTTP/1.1` request
-- `.equ RECV_TIMEOUT, 10` -- Number of seconds *ymawky* will wait to receive datta before closing the connection. If it's more than `RECV_TIMEOUT` seconds between `read()`s, *ymawky* will close the connection with `408 Request Timed Out`
-- `.equ HEADER_REQ_TIMEOUT_SECS, 10` -- Maximum number of seconds *ymawky* will wait to receive the full header before timing out. If it takes, longer than this to receive the header, *ymawky* will close the connection with `408 Request Timed Out`
-- `.equ PUT_GRACE_SECS, 5` -- *ymawky* dynamically calculates a max-time-per-PUT based on `Content-Length`. The max time is defined as `PUT_GRACE_SECS + Content-Length / PUT_MIN_BPS`. This is the minimum grace period allowed if it calculates a file should take <1 second to upload
+- `#define DEFAULT_FILE "index.html"` -- This is the default file ymawky will serve when it receives an empty `GET / HTTP/1.1` request
+- `.equ RECV_TIMEOUT, 10` -- Number of seconds ymawky will wait to receive datta before closing the connection. If it's more than `RECV_TIMEOUT` seconds between `read()`s, ymawky will close the connection with `408 Request Timed Out`
+- `.equ HEADER_REQ_TIMEOUT_SECS, 10` -- Maximum number of seconds ymawky will wait to receive the full header before timing out. If it takes, longer than this to receive the header, ymawky will close the connection with `408 Request Timed Out`
+- `.equ PUT_GRACE_SECS, 5` -- ymawky dynamically calculates a max-time-per-PUT based on `Content-Length`. The max time is defined as `PUT_GRACE_SECS + Content-Length / PUT_MIN_BPS`. This is the minimum grace period allowed if it calculates a file should take <1 second to upload
 - `.equ PUT_MIN_BPS, 1024 * 16` -- Minimum bytes-per-second. Higher if you want to be stricter, smaller if you want to be more lenient. Since this uses the `.equ` directive, arithmetic is supported, and `1024 * 16` gets calculated at assembly time becoming `16384` or 16KB
 - `.equ MAX_BODY_SIZE, 1024 * 1024 * 1024` -- Maximum bytes PUT allows for Content-Length. By default, 1GB (1024*1024*1024 = 1073741824 bytes). Files with a larger Content-Length larger than this will be rejected with `413 Content Too Large`
-- `.equ MAX_PROCS, 256` -- Maximum number of concurrent proccesses *ymawky* is allowed to run. Since *ymawky* is a fork-per-connection server, you want to ensure *ymawky* doesn't exhaust your PID space. *ymawky* will reply with `503 Service Unavailable`
+- `.equ MAX_PROCS, 256` -- Maximum number of concurrent proccesses ymawky is allowed to run. Since ymawky is a fork-per-connection server, you want to ensure ymawky doesn't exhaust your PID space. ymawky will reply with `503 Service Unavailable`
 
 ## Implementation Notes
-*ymawky* is written for MacOS (sorry...). There are a few (well, more than a *few*) things that are MacOS-specific in this code that won't be portable.
+ymawky is written for MacOS (sorry...). There are a few (well, more than a *few*) things that are MacOS-specific in this code that won't be portable.
 - Syscalls on MacOS use `x16` for the number and `svc #0x80` to call it. Linux uses `x8` and `svc #0`.
 - Error reporting is different. MacOS sets the carry flag on error, and puts `errno` in `x0`. Linux returns a negative value in `x0`, like `-ENOENT`. Ever `b.cs` would need to be replaced with `cmp x0, #0` / `b.lt ...`, and you'd negate `x0` to get errno.
 - `fork()` works differently, MacOS puts 1 in `x1` in the child process, whereas Linux puts `0` in `x0`.
@@ -166,7 +166,7 @@ You can configure *ymawky* with the `config.S` file. The options are documented 
 - `renameatx_np()` is also MacOS-specific. Linux has `renameat2()`, with different flag values.
 - Struct layouts and offsets will differ. The `stat64` struct, `itimerval` struct, and `sockaddr_in` struct, will all need to be reconsidered.
 - `adr xN, foo@PAGE` / `add xN, xN, foo@PAGEOFF` are Mach-O relocation operators. Linux ELF uses different syntax, like `:pg_hi21:` and `:lo12:`. The `adr_l`, `ldr_l` and `str_l` macros would need to be rewritten or replaced.
-- My personal favorite :3 Signal handling works differently on Linux and MacOS. MacOS's `sigaction` struct contains a `sa_tramp` field that the kernel jumps to before your handler. *ymawky* utilizes `sa_tramp` directly *as the handler itself*, skipping the libc trampoline and `sigreturn` entirely. Since the handler only sends a 408 and exits, without needing to return, that's fine and works wonderfully without libc. The `sigaction` call would need to be rewritten for POSIX systems.
+- My personal favorite :3 Signal handling works differently on Linux and MacOS. MacOS's `sigaction` struct contains a `sa_tramp` field that the kernel jumps to before your handler. ymawky utilizes `sa_tramp` directly *as the handler itself*, skipping the libc trampoline and `sigreturn` entirely. Since the handler only sends a 408 and exits, without needing to return, that's fine and works wonderfully without libc. The `sigaction` call would need to be rewritten for POSIX systems.
 
 ### Special Thanks:
 - *Bob Johnson*
