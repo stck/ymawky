@@ -15,9 +15,9 @@ rcv_timeout:
     .quad RECV_TIMEOUT ; tv_sec
     .quad 0            ; tv_usec
 
-;; also 30 second time for total header -- prevent slowloris-like attackers
-;; from opening a connection and sending <1 byte/min or something, hogging
-;; resources.
+;; timer for total header -- prevent slowloris-like attackers from opening a
+;; connection and sending <1 byte/min or something, hogging resources.
+;; configured in config.S, HEADER_REQ_TIMEOUT_SECS.
 read_timer:
     .quad 0   ; it_interval.tv_sec
     .long 0   ; it_interval.tv_usec
@@ -267,7 +267,7 @@ child:
 
     ;; set a signal handler for SIGALRM, so we can respond with 408 if the
     ;; connection times out during the header. see the long ass comment in
-    ;; http.S for a more detailed explanation of this, since it's extremely
+    ;; put.S for a more detailed explanation of this, since it's extremely
     ;; not-portable. macOS only. yuck. (it shouldn't be too hard to port to
     ;; linux though).
     sub sp, sp, #32

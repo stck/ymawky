@@ -31,7 +31,7 @@ file_types:
     mime_entry ".js",    "text/javascript; charset=utf-8"
     mime_entry ".json",  "application/json"
     mime_entry ".wasm",  "application/wasm"
-    mime_entry ".mfs",   "text/javascript; charset=utf-8"
+    mime_entry ".mjs",   "text/javascript; charset=utf-8"
     mime_entry ".map",   "application/json"
 
     ;; image

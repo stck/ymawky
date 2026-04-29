@@ -97,10 +97,10 @@ reply_204:
     svc #0x80
 
     ; write to socket
-    mov x16, SYS_write
     ldr_l x0, clientfd
     adr_l x1, header_204
     mov x2, header_204_len
+    bl write_all
     svc #0x80
 
     b child_end

@@ -119,7 +119,6 @@ Ltarget_missing:
     udiv x2, x21, x1 ;; x2 = content_length / min_bps
     add x2, x2, #PUT_GRACE_SECS ; ditto
 
-    ;; 
     ;; write the number of seconds calculated to the itimerval struct in the
     ;; it_value.tv_sec member
     adr_l x0, put_read_timer
