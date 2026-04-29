@@ -49,23 +49,14 @@
 .equ SYS_bind,         104
 .equ SYS_setsockopt,   105
 .equ SYS_listen,       106
-.equ SYS_rename,       128
 .equ SYS_shutdown,     134
 .equ SYS_mmap,         197
-.equ SYS_lseek,        199
 .equ SYS_stat64,       338
 .equ SYS_fstat64,      339
 .equ SYS_renameatx_np, 488
 
 ;; constants
 .equ BUF_SIZE,       16384 ; number of bytes for read()
-
-;; request type ids
-;.equ HEAD_REQ_ID,    0
-;.equ GET_REQ_ID,     1
-;.equ OPTIONS_REQ_ID, 2
-;.equ DELETE_REQ_ID,  3
-;.equ PUT_REQ_ID,     4
 
 ;; stuff for file.S
 .equ S_IFREG,        0x8000
@@ -74,8 +65,6 @@
 ;; errno values
 .equ EPERM,          1
 .equ ENOENT,         2
-.equ EIO,            5
-.equ ENOMEM,         12
 .equ EACCES,         13
 .equ EFAULT,         14
 .equ EBUSY,          16
@@ -105,9 +94,7 @@
 .equ SIGALRM,        14
 
 ;; oflags values for open()
-.equ O_RDONLY,       0x0000
 .equ O_WRONLY,       0x0001
-.equ O_RDRW,         0x0002
 .equ O_CREAT,        0x0200
 .equ O_TRUNC,        0x0400
 .equ O_NOFOLLOW_ANY, 0x20000000

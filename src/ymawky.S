@@ -412,11 +412,9 @@ read_failed:
     b reply_501
 
 Lget_method:
-    ;mov x20, GET_REQ_ID
     b get
 
 Lput_method:
-    ;mov x20, PUT_REQ_ID
     adr_l x0, buf
     mov x1, x23
     mov x2, x24
@@ -426,7 +424,7 @@ Lhead_method:
     b head
 
 Loptions_method:
-    b reply_204 ;; reply_* always return to child_end
+    b reply_204 ;; reply_* always returns to child_end
 
 Ldelete_method:
     b delete

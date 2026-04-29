@@ -539,7 +539,7 @@ do_path_checks:
     mov x1, x0
     adr_l x0, buf
     bl parse_path
-    b.cs Lpp_fail
+    b.cs L400
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
@@ -568,20 +568,6 @@ do_path_checks:
 2:
     ldp x29, x30, [sp], #16
     ret
-
-Lpp_fail:
-    cbz x0, L400
-
-    ;; TODO -- this check is reduntant. parse_path has a reduntant check if
-    ;; the path starts with .ymawky_tmp_*, but that's a mistake, since it
-    ;; could be encoded with %. so i've moved the check to this function, now
-    ;; it's unneeded in parse_path.
-    cmp x0, #1
-    b.eq L403
-
-    ;; this shouldn't be possible -- x0 should either be only 0 or 1. if it's
-    ;; neither, something went wrong and it's my fault, personally.
-    b L500
 
 
 ;; trampolines for conditional branches to reply_* in errors.S (which is too

@@ -19,7 +19,6 @@
 .global reply_500
 .global reply_501
 .global reply_507
-.global reply_508
 .global handle_fs_error
 
 .data
@@ -67,9 +66,6 @@ header_501: .ascii "HTTP/1.1 501 Not Implemented"
 
 header_507: .ascii "HTTP/1.1 507 Insufficient Storage"
 .equ header_507_len, . - header_507
-
-header_508: .ascii "HTTP/1.1 508 Loop Detected"
-.equ header_508_len, . - header_508
 
 header_tail:
     .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nServer: ymawky\r\n\r\n"
@@ -166,11 +162,6 @@ reply_507:
     mov x4, header_507_len
     b send_reply
 
-reply_508:
-    adr_l x3, header_508
-    mov x4, header_508_len
-    b send_reply
-
 
 ;; input
 ;; x3 -> header string
@@ -227,7 +218,7 @@ handle_fs_error:
     cb eq, x0, #ENAMETOOLONG, reply_414
     cb eq, x0, #EINVAL, reply_400
     ;; 403 since it's caused by O_NOFOLLOW_ANY most likely. if we ever allow
-    ;; symlinks, NOTE this should be 508.
+    ;; symlinks, note that this should be 508.
     cb eq, x0, #ELOOP, reply_403
     cb eq, x0, #ENOTDIR, reply_404
     cb eq, x0, #ENOENT, reply_404

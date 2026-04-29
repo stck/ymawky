@@ -1,6 +1,5 @@
 ;; get.S
-;; GET (and HEAD) request handler. shares its entry point with HEAD via
-;; the request type id in x20: HEAD just skips the body-write step.
+;; GET (and HEAD) request handler
 
 #include "defs.S"
 
@@ -157,15 +156,7 @@ get_setup:
 
     ;; if it returned 0 it's good :3
     ;; save x0 (header buffer) and x1 (header len) for use later
-    ;str_l x0, header_buf
-    ;str_l x1, header_len
     b Lgs_epilogue
-
-Lgs_end:
-    mov x16, SYS_close
-    ldr_l x0, file_des
-    svc #0x80
-    b child_end
 
 Lgs_epilogue:
     mov x0, x20
@@ -182,7 +173,6 @@ head:
     ldr_l x0, clientfd
     adr_l x1, header_buf
     ldr_l x2, header_len
-bp1:
     bl write_all
     ;; it's ok to ignore write errors here, since if we get an error the way to
     ;; handle it would be to close the file descriptor and b child_end, which
@@ -259,6 +249,5 @@ Lget_end:
 ;; trampolines for conditional branches to reply_* / handle_fs_error in other
 ;; files (b.cond / cbz can't reach across files; unconditional b can).
 L403: b reply_403
-L404: b reply_404
 L500: b reply_500
 Lhfs_err: b handle_fs_error
