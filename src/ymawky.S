@@ -336,6 +336,7 @@ read_loop:
 Lheader_found:
     mov x23, x1 ;; end of header index (one byte after \r\n\r\n)
     mov x24, x7 ;; total bytes
+    str_l x24, header_len
     b 2f ;; break from the hell of reading
 
 Lno_header:
@@ -461,7 +462,7 @@ Lhead_method:
     b head
 
 Loptions_method:
-    b reply_204 ;; reply_* always returns to child_end
+    b options
 
 Ldelete_method:
     b delete

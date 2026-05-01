@@ -58,6 +58,10 @@ put:
     bl do_path_checks
 
     ldr_l x0, filename_str
+    ldrb w1, [x0]
+    cmp w1, #'*'
+    b.eq L400
+    ;; x0 is still set
     bl stat_path
     cbz x0, Ltarget_exists
 

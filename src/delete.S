@@ -31,6 +31,10 @@ delete:
     bl do_path_checks
     ldr_l x0, filename_str
 
+    ldrb w1, [x0]
+    cmp w1, #'*'
+    b.eq L400
+
     bl stat_path
     cbnz x0, Ldelete_stat_failed
     cb ne, w1, #S_IFREG, L403
@@ -70,5 +74,6 @@ Lunlink_failed:
 
 ;; trampolines for conditional branches across files.
 L204: b reply_204
+L400: b reply_400
 L403: b reply_403
 L409: b reply_409

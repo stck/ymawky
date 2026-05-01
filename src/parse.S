@@ -569,7 +569,8 @@ pcl_epilogue:
 
 ;; input
 ;; x0 -> HTTP header from client ("GET /...")
-;; x1 -> boolean, if 1/true, default to "index.html" default filename. if
+;; x1 -> length of header
+;; x2 -> boolean, if 1/true, default to "index.html" default filename. if
 ;;       0/false, do not give a default filename.
 ;; 
 ;; return
@@ -579,22 +580,32 @@ pcl_epilogue:
 ;; clobbers x0, x1, x2, x3
 parse_path:
     ;; preserve link register so we can bl to other functions properly
-    stp x29, x30, [sp, #-32]!
+    stp x29, x30, [sp, #-48]!
     stp x20, x21, [sp, #16]
-    mov x20, x1 ;; save bool option in x20.
+    stp x22, x23, [sp, #32]
 
-    mov x1, #0
+    mov x22, x1 ;; save header length in x22
+    mov x20, x2 ;; save bool option in x20.
+
+    cmp x22, #16 ;; make sure the header is at least 16 bytes long
+    b.lo L400
+
+    mov x23, #0
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
+
 ;; this is basically strchr
 Lstrchr_loop:
     ;; load the current byte at the string pointer, and check if it's /
     ldrb w3, [x0]
+bp0:
     cmp w3, #'/'
+    b.eq Lchar_found
+    cmp w3, #'*'
     b.eq Lchar_found
 
     ;; if we haven't reached a / in the first 16 bytes, we'll fail
-    cmp x1, #16
+    cmp x23, #16
     b.eq Lno_match
 
     ;; if we reached a NULL byte in the first 16 bytes, it's definitely a
@@ -605,18 +616,26 @@ Lstrchr_loop:
     ;; if we got here, we gotta loop again. < 16 bytes in, no / reached, and no
     ;; NULL byte reached. increment string index and loop
     add x0, x0, #1 ;; increment the string pointer
-    add x1, x1, #1 ;; increment the byte counter so we can quit at 16 bytes
+    add x23, x23, #1 ;; increment the byte counter so we can quit at 16 bytes
     
     ;; save previous byte so we can check for preceding ' '
     mov w2, w3
     b Lstrchr_loop
 
-;; If we got here, we found a '/'. let's make sure the preceding byte -- stored
-;; in x2, is a ' ' so we only match ' /'. that way we avoid 'HTTP/1.1'
-;; "matching".
+;; If we got here, we found a '/' or '*'. let's make sure the preceding byte,
+;; stored in x2, is a ' ' so we only match ' /' or ' *'. that way we avoid
+;; 'HTTP/1.1' "matching".
 Lchar_found:
     cmp w2, #' '
     b.ne Lno_match
+
+    ;; if / is the last char in the header, it's deffo malformed.
+    add x23, x23, #1
+    cmp x23, x22
+    b.hi Lno_match
+
+    cmp w3, #'*'
+    b.eq Lasterisk
 
     add x0, x0, #1 ;; skip past the '/' which we're currently on
 
@@ -655,6 +674,12 @@ Lfilename_loop:
     strb w3, [x1, x4] ; copy byte to filename_buf+index
     add x4, x4, #1 ; increment the filename index
     add x2, x2, #1 ; increment the header index
+    add x23, x23, #1 ; increment the total index
+
+    ;; bounds check!
+    cmp x23, x22
+    b.hi Lno_match
+
     b Lfilename_loop
 
 Lfilename_done:
@@ -699,6 +724,26 @@ Lno_default_file:
     mov x1, www_prefix_len
     b Lparse_return
 
+Lasterisk:
+    ;; bounds check yuck
+    add x23, x23, #1
+    cmp x23, x22
+    b.hi L400
+
+    ;; make sure the next char is a space -- "OPTIONS *foo" is invalid"
+    ldrb w2, [x0, #1]
+    cmp w2, #' '
+    b.ne L400
+
+    ;; store * as the filename
+    adr_l x0, filename_buf
+    str w3, [x0]
+    strb wzr, [x0, #1]
+
+    ;; x0 is already set
+    mov x1, #1 ; filename is just one byte
+    b Lparse_return
+
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
 Lno_match:
@@ -711,8 +756,9 @@ Lparse_return:
     cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
 1:
     ;; restore the link register and ret
+    ldp x22, x23, [sp, #32]
     ldp x20, x21, [sp, #16]
-    ldp x29, x30, [sp], #32
+    ldp x29, x30, [sp], #48
     ret
 
 ;; input
@@ -775,8 +821,9 @@ Lno_end_found:
 do_path_checks:
     stp x29, x30, [sp, #-16]!
 
-    mov x1, x0
+    mov x2, x0
     adr_l x0, buf
+    ldr_l x1, header_len
     bl parse_path
     b.cs L400
 

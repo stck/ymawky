@@ -249,6 +249,10 @@ get_setup:
     bl do_path_checks
     ldr_l x0, filename_str
 
+    ldrb w1, [x0]
+    cmp w1, #'*'
+    b.eq L400
+
     mov x16, SYS_open
     ldr_l x0, filename_str
     mov x1, #0 ; RDONLY
