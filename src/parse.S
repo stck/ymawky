@@ -598,7 +598,6 @@ parse_path:
 Lstrchr_loop:
     ;; load the current byte at the string pointer, and check if it's /
     ldrb w3, [x0]
-bp0:
     cmp w3, #'/'
     b.eq Lchar_found
     cmp w3, #'*'

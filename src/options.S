@@ -17,7 +17,7 @@ options:
     bl stat_path
     cbnz x0, Lhfs_err
     cmp w1, #S_IFREG
-    b.eq L403
+    b.ne L403
 
     b L204
 

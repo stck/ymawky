@@ -1,6 +1,13 @@
 ;; Default docroot, relative to ymawky's current working environment.
+;; Note that this needs the trailing /.
 ;; Default: www/
 #define DEFAULT_DIR "www/"
+
+;; Directory to search for custom error HTML pages, so a page can be displayed
+;; on 404 rather than just the browser's boring stuff.
+;; Note that this needs the trailing /.
+;; Default: err/
+#define ERR_DIR "err/"
 
 ;; When receiving a "GET /" request with no filename, what file should be GOT?
 ;; Default: index.html

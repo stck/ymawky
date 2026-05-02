@@ -19,8 +19,6 @@
 .global build_header
 .global reply_status
 .global header_buf
-.global header_len
-
 
 .data
 header_200: .ascii "HTTP/1.1 200 OK"
@@ -29,7 +27,7 @@ header_200: .ascii "HTTP/1.1 200 OK"
 header_201: .ascii "HTTP/1.1 201 Created"
 .equ header_201_len, . - header_201
 
-header_204: .ascii "HTTP/1.1 204 No Content\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
+header_204: .ascii "HTTP/1.1 204 No Content"
 .equ header_204_len, . - header_204
 
 header_206: .ascii "HTTP/1.1 206 Partial Content"
@@ -96,7 +94,7 @@ header_tail:
     .ascii "\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_tail_len, . - header_tail
 
-err_dir: .ascii "err/"
+err_dir: .ascii ERR_DIR
 .equ err_dir_len, . - err_dir
 err_ext: .ascii ".html"
 .equ err_ext_len, . - err_ext
@@ -225,6 +223,10 @@ build_header:
     b Lbh_content_length
 
 Lbh_content_length:
+    ;; we don't want to write a content-length or content-type on a 204.
+    cmp x24, #204
+    b.eq Lheader_tail
+
     mov x2, header_content_length_len
     add x14, x14, x2
     cb gt, x14, header_buf_size, Lheader_too_big
@@ -320,6 +322,10 @@ Lbh_content_length:
     bl memcpy
 
 Lbh_content_type:
+    ;; if it's an empty file, don't bother with Content-Type.
+    cmp x20, #0
+    b.eq Lheader_tail
+
     ;; copy "\r\nContent-Type:" to buffer
     ; x0 is already set from previous memcpy
     adr_l x1, header_content_type
@@ -331,9 +337,7 @@ Lbh_content_type:
 
     ldr_l x0, filename_str
     ldr_l x1, filename_len
-bp1:
     bl get_filetype
-bp2:
 
     ;; write filename to header_buf
     mov x2, x1 ; filename_len
@@ -343,6 +347,7 @@ bp2:
     cb gt, x14, header_buf_size, Lheader_too_big
     bl memcpy
 
+Lheader_tail:
     ;; write the \r\n\r\n
     ; x0 is still set from memcpy
     adr_l x1, header_tail
