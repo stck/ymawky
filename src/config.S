@@ -36,4 +36,4 @@
 ;; Maximum number of active, concurrent processes allowed.
 ;; This is entirely up to you and how many processes your computer can handle.
 ;; Default: 256
-.equ MAX_PROCS, 1
+.equ MAX_PROCS, 256
