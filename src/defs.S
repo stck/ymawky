@@ -45,10 +45,15 @@
 .equ SYS_listen,       106
 .equ SYS_shutdown,     134
 .equ SYS_mmap,         197
+.equ SYS_proc_info,    336
 .equ SYS_stat64,       338
 .equ SYS_fstat64,      339
 .equ SYS_unlinkat,     472
 .equ SYS_renameatx_np, 488
+
+;; proc stuff
+.equ PROC_INFO_CALL_LISTPIDS, 1
+.equ PROC_PPID_ONLY,          6
 
 ;; constants
 .equ BUF_SIZE,       16384 ; number of bytes for read()
@@ -86,6 +91,9 @@
 
 ;; signals
 .equ SIGALRM,        14
+.equ SIGCHLD,        20
+.equ SIG_IGN,        1
+.equ SA_NOCLDWAIT,   0x0020
 
 ;; oflags values for open()
 .equ O_WRONLY,       0x0001

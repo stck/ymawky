@@ -102,7 +102,6 @@ ymawky_shutdown: .asciz "ymawky is shutting down :(\n"
 .bss
 .align 3
 sockfd:             .skip 8
-procs:              .skip 8
 
 .text
 .align 2
@@ -190,31 +189,27 @@ skip_argv:
     svc #0x80
 
     ;; debug flag check. skip past the fork stuff in x28 is set
-    cbnz x28, 1f
-loop:
-;; reap any dead child processes
-;; note: some (like, one) children may briefly exist as zombies between the
-;; child exiting and the next accept() returning. Lreap cleans them up on the
-;; next iteration. this is pretty harmless beyond a couple hundred bytes of
-;; memory *maybe* being wasted. this should ideally be fixme'd in the future,
-;; though.
-Lreap:
-    mov x16, SYS_wait4
-    mov x0, #-1 ; any child
-    mov x1, #0  ; status = NULL
-    mov x2, #1  ; WNOHANG
-    mov x3, #0  ; rusage = NULL
+    cbnz x28, loop
+
+    ;; set up SIG_IGN on SIGCHLD, with SA_NOCLDWAIT to tell the kernel to auto
+    ;; reap children. previously zombies were piling up :(
+    sub sp, sp, #32
+    mov x0, #SIG_IGN
+    mov x1, #SA_NOCLDWAIT
+    str x0, [sp, #0]  ; sa_handler = SIG_IGN
+    str x0, [sp, #8]   ; sp_tramp
+    str wzr, [sp, #16] ; sa_mask = 0
+    str x1, [sp, #20] ; sa_flags = SA_NOCLDWAIT
+
+    mov x16, SYS_sigaction
+    mov w0, #SIGCHLD
+    mov x1, sp
+    mov x2, #0 ; old action = NULL
     svc #0x80
-    b.cs 1f
-    cmp x0, #0  ; if we reaped some children, there might be more
-    b.le 1f
+    add sp, sp, #32
+    b.cs L500
 
-    ldr_l x10, procs
-    sub x10, x10, #1
-    str_l x10, procs
-
-    b Lreap
-1:
+loop:
     ;; accept(sockfd, NULL, NULL)
     mov x16, SYS_accept
     ldr_l x0, sockfd
@@ -230,9 +225,32 @@ Lreap:
     ;; fork -- it's much easier to debug with lldb if there's no forking :(
     cbnz x28, child
 
-    ldr_l x0, procs
+    mov x16, SYS_getpid
+    svc #0x80
+    ;; x0 now contains pid
+
+    ;; gotta check if number of processes is > MAX_PROCS. luckily, apple has an
+    ;; undocumented syscall, "proc_info", that allows us to get all children of
+    ;; this process into a buffer. in the buffer, each child pid is stored as a
+    ;; 32-bit integers.
+    sub sp, sp, #2048 ; allocate a bit of stack space for the proc_info buf
+    mov x16, SYS_proc_info
+    mov x2, x0 ; our pid. wondering why we called gitpid() a minute ago? ;)
+    mov x0, PROC_INFO_CALL_LISTPIDS
+    mov x1, PROC_PPID_ONLY
+    mov x3, #0
+    mov x4, sp
+    mov x5, #2048
+    svc #0x80
+
+    ;; proc_info returns the number of bytes written to the stack. if we divide
+    ;; by 4, it tells us the total number of procs.
+    lsr x0, x0, #2
+    add sp, sp, #2048 ; now we can free up the stack space
+
+    ;; is the nuymber of procs > MAX_PROCS? 503 if so.
     cmp x0, #MAX_PROCS
-    b.lo 8f
+    b.ls 8f
 
     ;; uh-oh, we're at the max processes. let's give a nice, kind, smart, cute,
     ;; lil, friendly 503 :3
@@ -242,22 +260,11 @@ Lreap:
     b 2f ; close n loop!
 
 8:
-    ldr_l x0, procs
-    add x0, x0, #1
-    str_l x0, procs
     ;; fork()
     mov x16, SYS_fork
     svc #0x80
-    b.cc 3f ;; fork succeeded, skip the error handling!
+    b.cs 2f ;; fork failed :( fuck :( close and loop again :(
 
-    ;; fork failed :( fuck :( decrement proc counter
-    ldr_l x0, procs
-    sub x0, x0, #1
-    str_l x0, procs
-
-    b 2f ; close n loop again
-
-3:
     ;; if we're in the child, go there
     ;; NOTE
     ;; on macos, fork() returns the pid of the child process in x0 in the
