@@ -1,10 +1,12 @@
 #!/bin/sh
 
 while IFS=: read -r code title msg; do
+    printf "$code $title ($msg) -> err/$code.html..."
     sed -e "s/{{CODE}}/$code/g" \
         -e "s/{{TITLE}}/$title/g" \
         -e "s/{{MSG}}/$msg/g" \
         err/template.html > "err/$code.html"
+    echo " done"
 done <<EOF
 400:Bad Request:the rats didn't understand you
 403:Forbidden:the rats won't let you do that
