@@ -858,6 +858,15 @@ do_path_checks:
 
 ;; trampolines for conditional branches to reply_* in errors.S (which is too
 ;; far for b.cond / cbz to reach directly).
-L400: b reply_400
-L403: b reply_403
-L500: b reply_500
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status
+L500:
+    mov x0, #500
+    mov x1, #0
+    b reply_status

@@ -6,6 +6,10 @@
 ;; Default: index.html
 #define DEFAULT_FILE "index.html"
 
+;; Maximum size, in bytes, for a response header. Will usually be less.
+;; Default: 512 bytes
+.equ RESPONSE_HEADER_SIZE, 512
+
 ;; Maximum time, in seconds, without receiving any data before closing the
 ;; connection.
 ;; Default: 10 seconds
@@ -32,4 +36,4 @@
 ;; Maximum number of active, concurrent processes allowed.
 ;; This is entirely up to you and how many processes your computer can handle.
 ;; Default: 256
-.equ MAX_PROCS, 256
+.equ MAX_PROCS, 1

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>{{CODE}} {{TITLE}}</title>
+        <style>
+body {
+    background: #1a1a2e;
+    color: #c9b0ff;
+    font-family: "Arial Rounded MT Bold", "Hevetica Rounded", system-ui, sans-serif;
+    font-weight: normal;
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* he's always watching */
+.watching-rat {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 7px;
+    line-height: 1;
+    color: #444;
+    opacity: 0.15;
+    z-index: -1;
+    white-space: pre;
+    margin: 0;
+    pointer-events: none;
+    user-select: none;
+}
+
+.heading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 50vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+.heading h1 { font-size: 6em; margin: 0; font-weight: normal }
+.heading p { margin: 0.5em 0; font-weight: normal }
+
+.footer {
+    position: absolute;
+    bottom: 5px;
+    left: 0;
+    width: 100vw;
+    text-align: center;
+    color: #666;
+    font-size: 0.8em;
+}
+
+.rat {
+    position: absolute;
+    white-space: nowrap;
+    font-size: 1.5em;
+    will-change: left;
+    color: #473769;
+}
+.rat.flip { transform: scaleX(-1); }
+        </style>
+    </head>
+    <body>
+        <div class="heading">
+            <pre class="watching-rat">
+                                                        ░░▓▓▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░
+                                                ▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+                    ░░                    ░░▒▒▓▓▓▓████▓▓▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒░░
+                  ░░▒▒      ░░▓▓▓▓      ░░▒▒▓▓▓▓▓▓▓▓████████▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▒▒░░
+                ░░░░░░░░    ▒▒▒▒▒▒▒▒  ▒▒▒▒▓▓██▓▓▓▓▓▓████████▓▓▓▓▓▓▓▓▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒░░
+                  ▒▒▓▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓▒▒
+                ▒▒▒▒▓▓▓▓██▒▒░░░░▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓████▓▓▓▓▓▓▓▓▓▓▓▓██▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
+            ▒▒▓▓▓▓▓▓▓▓▓▓▓▓░░▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓██▓▓▓▓▓▓▓▓▓▓▓▓██████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
+          ▒▒▓▓▓▓▓▓░░▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▓▓▓▓████▓▓▓▓▓▓▓▓████████████▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░
+        ▒▒▓▓▓▓▒▒▓▓▓▓▒▒▓▓▓▓▒▒▒▒▒▒░░▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓████████████▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+      ▒▒▒▒▒▒▓▓▓▓▒▒▓▓░░▓▓▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓██████████▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░
+  ░░▒▒▒▒░░▒▒▓▓████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓████████████▓▓▓▓▒▒▒▒▒▒▒▒▒▒░░▒▒▒▒▒▒▒▒▓▓▒▒
+  ░░░░░░▒▒▒▒▒▒▓▓██▓▓▒▒▒▒░░▒▒▒▒▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓████▓▓██████▓▓▓▓▓▓▒▒▒▒▒▒░░░░░░░░▒▒▒▒▒▒▒▒▓▓░░
+  ▒▒▒▒▒▒░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓██████████▓▓▓▓▒▒▒▒▒▒▒▒░░░░░░░░░░▒▒▒▒▒▒▓▓▓▓▒▒
+    ░░▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓██████████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓████████▓▓▓▓▒▒▒▒▒▒░░░░░░░░░░▒▒▒▒▒▒▓▓▓▓▓▓▓▓
+                      ░░▓▓████████▓▓▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓████▓▓▓▓▓▓▒▒▒▒▒▒░░░░░░░░▒▒░░▒▒▒▒▒▒▓▓▓▓▓▓▓▓░░
+                            ▒▒▓▓▓▓▓▓▒▒▒▒▒▒▒▒▓▓▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓████▓▓▓▓▒▒▒▒░░▒▒░░░░░░░░▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▒▒
+                                ▒▒▓▓▓▓▒▒▒▒▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▒░░░░░░▒▒░░▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓
+                                  ▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒██▓▓██▓▓▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██▓▓▓▓██░░
+                                  ░░▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓▓▓██▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓██▓▓▓▓▓▓
+                                    ██▓▓▓▓▓▓██▓▓▒▒░░░░░░▒▒▓▓▓▓▓▓██████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▓▓▓▓▓▓▓▓██▓▓▓▓▓▓▓▓
+                                    ▓▓▓▓  ▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓██████████▓▓▒▒▒▒▓▓▒▒▒▒▒▒▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓██▓▓▓▓▓▓▒▒
+                                    ▒▒░░      ▒▒▓▓▒▒▒▒▒▒▓▓▓▓▓▓████████████▓▓▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓██▓▓▓▓▓▓▓▓▓▓▒▒▓▓░░
+                                    ▒▒          ▒▒▓▓▒▒▒▒▓▓▓▓██████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓████████▓▓▓▓▓▓▒▒▓▓▒▒
+                                ░░░░░░          ░░▒▒▒▒▒▒████▓▓░░        ▒▒▓▓████████▓▓▓▓██▓▓████████████▓▓▓▓▓▓▓▓▓▓▒▒▒▒░░
+                                ░░░░░░        ░░▒▒▒▒▒▒░░░░                  ░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓██▓▓██▓▓▓▓░░  ▒▒░░▒▒▓▓▒▒▒▒░░
+                                  ░░      ░░░░░░░░                      ░░▒▒▒▒▒▒░░░░░░░░░░▒▒                        ░░▒▒░░░░
+                                          ░░░░░░░░                    ░░▒▒▒▒▒▒░░░░▒▒                                  ▓▓▒▒░░
+                                                                            ░░                                          ▒▒░░▒▒
+                                                                                                                        ▒▒░░▒▒
+                                                                                                                        ▒▒▒▒▒▒
+                                                                                                                        ▒▒▒▒▒▒
+                                                                                                                        ▒▒░░▒▒
+                                                                                                                      ░░░░░░░░
+                    ░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░                                                              ░░░░▒▒▓▓
+              ░░░░                        ░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░                                        ░░░░▒▒▒▒▒▒▒▒
+                                                        ░░▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░▒▒░░░░▒▒▒▒▒▒▒▒▒▒░░▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+                                                                      ░░▒▒▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒░░░░
+            </pre>
+            <h1>{{CODE}}</h1>
+            <p>{{MSG}}</p>
+        </div>
+        <div class="footer"><small>ymawky :: hand-rolled aarch64</small></div>
+        <script>
+const rats = ["<:3 )~~~", "<:3 )~~", "<:3  )~~~", "<:3  )~~", "<:3  )~~~~" ];
+const MAX_RATS = 4;
+const ROW_HEIGHT = 36;        // px between possible rat rows
+const activeRows = new Set();  // which y-positions are currently occupied
+let activeRats = 0;
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+function pickFreeRow() {
+    // bottom 1/3 of viewport, divided into discrete rows
+    const startY = Math.floor(window.innerHeight * 2 / 3);
+    const endY   = window.innerHeight - 50;
+    const rowCount = Math.floor((endY - startY) / ROW_HEIGHT);
+    if (rowCount <= 0) return null;
+
+    // try up to 10 random picks to find an unoccupied row
+    for (let i = 0; i < 10; i++) {
+        const idx = Math.floor(Math.random() * rowCount);
+        const y = startY + idx * ROW_HEIGHT;
+        if (!activeRows.has(y)) return y;
+    }
+    return null;  // all rows full or just unlucky
+}
+
+function spawnRat() {
+    if (activeRats >= MAX_RATS) return;
+
+    const y = pickFreeRow();
+    if (y === null) return;  // no free row, skip this spawn
+
+    activeRats++;
+    activeRows.add(y);
+
+    const el = document.createElement('div');
+    el.className = 'rat';
+    el.textContent = rats[Math.floor(Math.random() * rats.length)];
+    el.style.top = y + 'px';
+
+	const zoomies = Math.random() < 0.075;
+    const duration = zoomies ? rand(0.34, 2) : rand(4, 10);
+    const goingLeft = Math.random() < 0.4;
+
+    if (goingLeft) {
+        el.style.left = (window.innerWidth + 50) + 'px';
+        el.style.transition = `left ${duration}s linear`;
+        document.body.appendChild(el);
+        el.offsetHeight;  // force reflow so transition triggers
+        el.style.left = '-300px';
+    } else {
+        el.classList.add('flip');
+        el.style.left = '-300px';
+        el.style.transition = `left ${duration}s linear`;
+        document.body.appendChild(el);
+        el.offsetHeight;
+        el.style.left = (window.innerWidth + 50) + 'px';
+    }
+
+    setTimeout(() => {
+        el.remove();
+        activeRows.delete(y);
+        activeRats--;
+    }, duration * 1000);
+}
+
+function loop() {
+    spawnRat();
+    setTimeout(loop, rand(500, 3000));
+}
+
+loop();
+        </script>
+    </body>
+</html>

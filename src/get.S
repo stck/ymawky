@@ -44,195 +44,12 @@ good_response_tail:
 .bss
 .align 3
 file_des:    .skip 8
-.equ header_buf_size, 512
-header_buf:  .skip header_buf_size
-header_len:  .skip 8
+;.equ header_buf_size, 512
+;header_buf:  .skip header_buf_size
+;header_len:  .skip 8
 
 .text
 .align 2
-
-;; build a header, store it into header_buf, and then write it to the socket
-;; in a loop, accounting for partial-writes.
-;; input
-;; x0 -> file length
-;; x1 -> start range (or -1 if no range)
-;; x2 -> end range
-;;
-;; output
-;; x0 -> header buffer
-;; x1 -> header length
-build_header:
-    stp x29, x30, [sp, #-48]!
-    stp x20, x21, [sp, #16]
-    stp x22, x23, [sp, #32]
-
-    mov x20, x0
-    mov x22, x1 ; start range
-    mov x23, x2 ; end range
-
-    adr_l x13, header_buf
-    mov x14, #0 ; counter of bytes writteen to header_buf
-
-    cmn x1, #1
-    b.eq Lbh_200
-
-    ;; 206 path
-    ;; copy "HTTP/1.1 206 ...", beginning of header, to header_buf
-    mov x0, x13
-    adr_l x1, head_206
-    mov x2, head_206_len
-    ;; make sure we don't write past header_buf's memory!
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
-
-    b Lbh_content_length
-
-Lbh_200:
-    ;; copy "HTTP/1.1 200 OK...", beginning of header, to header_buf
-    mov x0, x13
-    adr_l x1, head_200
-    mov x2, head_200_len
-    ;; make sure we don't write past header_buf's memory!
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
-
-Lbh_content_length:
-    cmn x22, #1
-    b.eq 1f
-
-    ;; if we're sending a range, content-length should be end - start instead
-    sub x0, x23, x22
-    add x0, x0, #1
-    b 2f
-
-1:
-    ;; but if it's just a file, just grab the total file length.
-    mov x0, x20
-
-2:
-    bl itoa
-    ;; copy content-length string into header_buf
-    mov x2, x1  ; content_length_len (length of string)
-    mov x1, x0  ; content_length_str
-    mov x0, x13 ; header_buf + offset
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-
-    ;; skip all this stuff for no range
-    cmn x22, #1
-    b.eq Lbh_content_type
-
-    ;; 206 path
-    ;; write Content-Range: bytes
-    adr_l x1, head_content_range
-    mov x2, head_content_range_len
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0
-
-    ;; start range
-    mov x0, x22
-    bl itoa
-
-    mov x2, x1
-    mov x1, x0
-    mov x0, x13
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0
-
-    ;; -
-    add x14, x14, #1
-    cb gt, x14, header_buf_size, Lheader_too_big
-    mov w0, #'-'
-    strb w0, [x13]
-    add x13, x13, #1
-
-    ;; end range
-    mov x0, x23
-    bl itoa
-
-    mov x2, x1
-    mov x1, x0
-    mov x0, x13
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0
-
-    ;; /
-    add x14, x14, #1
-    cb gt, x14, header_buf_size, Lheader_too_big
-    mov w0, #'/'
-    strb w0, [x13]
-    add x13, x13, #1
-
-    ;; total size
-    mov x0, x20
-    bl itoa
-
-    mov x2, x1  ; content_length_len (length of string)
-    mov x1, x0  ; content_length_str
-    mov x0, x13 ; header_buf + offset
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-
-Lbh_content_type:
-    ;; copy "\r\nContent-Type:" to buffer
-    ; x0 is already set from previous memcpy
-    adr_l x1, head_content_type
-    mov x2, head_content_type_len
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-    mov x13, x0
-
-    ldr_l x0, filename_str
-    ldr_l x1, filename_len
-    bl get_filetype
-
-    ;; write filename to header_buf
-    mov x2, x1 ; filename_len
-    mov x1, x0 ; source string, filename_str
-    mov x0, x13 ; destination, header_buf
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-
-    ;; write the \r\n\r\n
-    ; x0 is still set from memcpy
-    adr_l x1, good_response_tail
-    mov x2, good_response_tail_len
-    add x14, x14, x2
-    cb gt, x14, header_buf_size, Lheader_too_big
-    bl memcpy
-
-    b Lbh_done
-Lheader_too_big:
-    mov x0, #0
-    str_l x0, header_len
-    cmp xzr, xzr ; set carry
-    b Lbh_epilogue
-
-Lbh_done:
-    str_l x14, header_len
-    cmn xzr, xzr ; clear carry
-    b Lbh_epilogue
-
-Lbh_epilogue:
-    ldp x22, x23, [sp, #32]
-    ldp x20, x21, [sp, #16]
-    ldp x29, x30, [sp], #48
-    ret
-
 
 ;; setup for the "GET" and "HEAD" methods. pretty much just writes the header
 ;; after getting content length and such.
@@ -282,6 +99,7 @@ head:
     ;; x0 is already set from get_setup
     mov x1, #-1
     mov x2, #-1
+    mov x3, #200 ;; 200 OK
     bl build_header
     b.cs L500
 
@@ -395,6 +213,7 @@ Lno_range:
     mov x0, x19
     mov x1, #-1
     mov x2, #-1
+    mov x3, #200 ;; 200 OK
     bl build_header
     b.cs L500
 
@@ -408,6 +227,7 @@ Lbuild_ranged_header:
     mov x0, x19
     mov x1, x22
     mov x2, x23
+    mov x3, #206 ;; 206 Partial Content
     bl build_header
     b.cs L500
     ;; fallthrough
@@ -476,8 +296,20 @@ Lget_end:
 
 ;; trampolines for conditional branches to reply_* / handle_fs_error in other
 ;; files (b.cond / cbz can't reach across files; unconditional b can).
-L400: b reply_400
-L403: b reply_403
-L416: b reply_416
-L500: b reply_500
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status
+L416:
+    mov x0, #416
+    mov x1, #0
+    b reply_status
+L500:
+    mov x0, #500
+    mov x1, #0
+    b reply_status
 Lhfs_err: b handle_fs_error

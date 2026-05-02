@@ -263,11 +263,11 @@ Lput_read_failed:
     cb eq, x0, #EHOSTUNREACH, Lchild_end
 
     ;; none of those, so something weird's going on. just 500.
-    b reply_500
+    b L500
 
 Lput_close_and_500:
     bl Lput_cleanup_tmp_file
-    b reply_500
+    b L500
 
 ;; close and delete the temporary file
 Lput_cleanup_tmp_file:
@@ -294,7 +294,7 @@ Lput_sigalrm_handler:
     ldr_l x0, filename_tmp_str
     svc #0x80
 
-    b reply_408
+    b L408
 
 ;; if we read 0 bytes, check if we were actually done reading. if
 ;; content-length bytes had not been read total, the client hung up in the
@@ -314,7 +314,7 @@ Lput_read_zero:
     ldr_l x0, filename_tmp_str
     svc #0x80
 
-    b reply_400
+    b L400
 
 Lput_done:
     ;; disarm the timer
@@ -377,13 +377,37 @@ Lpcl_error:
 
 
 ;; trampolines for conditional branches across files.
-L201: b reply_201
-L204: b reply_204
-L400: b reply_400
-L403: b reply_403
-L408: b reply_408
-L411: b reply_411
-L413: b reply_413
-L500: b reply_500
 Lchild_end: b child_end
 Lhfs_err: b handle_fs_error
+L201:
+    mov x0, #201
+    mov x1, #0
+    b reply_status
+L204:
+    mov x0, #204
+    mov x1, #0
+    b reply_status
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status
+L408:
+    mov x0, #408
+    mov x1, #0
+    b reply_status
+L411:
+    mov x0, #411
+    mov x1, #0
+    b reply_status
+L413:
+    mov x0, #413
+    mov x1, #0
+    b reply_status
+L500:
+    mov x0, #500
+    mov x1, #0
+    b reply_status

@@ -8,8 +8,9 @@ Requires Xcode Command Line Tools. Install with `xcode-select --install`.
 ymawky only runs on apple silicon (arm64).
 
 Run `make` to build.
-Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where `ymawky` searches for files.
+Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where *ymawky* searches for files.
 `GET` with an empty filename (`GET /`) will search for `www/index.html`, so you might want to make sure there's an `index.html` as well.
+*ymawky* will try to serve static error pages when a client's request results in error, eg 404. The pages it searches for in `err/(code).html`, so ensure `err/` exists alongisde `ymawky` and `www/`.
 See [Configuration](#configuration) to modify the default file and docroot.
 
 ## Running
@@ -43,6 +44,7 @@ ymawky is a static-file web server. It doesn't support server-side code to gener
 - `Content-Length:` parsing and verification in `PUT` requests
 - MIME type detection, giving `Content-Type` in the response header with the corresponding MIME type
 - Accepts `Range: bytes=` ranges in GET requests, supporting full ranges `bytes=X-N`, suffix ranges `bytes=-N`, and open-ended ranges `bytes=X-`. Video scrubbing is well supported
+- Serves custom HTML pages for error codes, such as 404, or 500. Look in the `err/` directory for an example
 
 ## "Safety"
 This is a web server written entirely by-hand in ARM64 assembly as a fun project. It's probably got a lot of vulnerabilities I'm unaware of. However, I did do my best to make it safer. Here are some safety precautions ymawky takes.
@@ -77,6 +79,10 @@ ymawky currently supports and can reply with the following status codes:
 - `503 Service Unavailable`
 - `505 HTTP Version Not Supported`
 - `507 Insufficient Storage`
+Custom HTML pages will be served alongside the error codes (400+). These HTML files are located in `err/(code).html`. You can use `build_err_pages.sh` to create a page for each code, with different text at your leisure. Edit the source code of `build_err_pages.sh` to modify the text per-page, and modify `err/template.html` to modify the base template. In `err/template.html`:
+- `{{CODE}}`  - HTTP Code: eg, 404
+- `{{TITLE}}` - Title text: eg, "Not Found"
+- `{{MSG}}`   - Custom message: eg, "the rats ate this page"
 
 ## MIME Types
 MIME types are detected by analyzing the file extension. The following MIME types are recognized.

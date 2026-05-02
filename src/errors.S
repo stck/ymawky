@@ -15,31 +15,25 @@
 
 #include "defs.S"
 
-.global reply_201
-.global reply_204
-.global reply_400
-.global reply_403
-.global reply_404
-.global reply_408
-.global reply_409
-.global reply_416
-.global reply_411
-.global reply_413
-.global reply_414
-.global reply_418
-.global reply_431
-.global reply_500
-.global reply_501
-.global reply_505
-.global reply_507
 .global handle_fs_error
+.global build_header
+.global reply_status
+.global header_buf
+.global header_len
+
 
 .data
+header_200: .ascii "HTTP/1.1 200 OK"
+.equ header_200_len, . - header_200
+
 header_201: .ascii "HTTP/1.1 201 Created"
 .equ header_201_len, . - header_201
 
 header_204: .ascii "HTTP/1.1 204 No Content\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_204_len, . - header_204
+
+header_206: .ascii "HTTP/1.1 206 Partial Content"
+.equ header_206_len, . - header_206
 
 header_400: .ascii "HTTP/1.1 400 Bad Request"
 .equ header_400_len, . - header_400
@@ -80,185 +74,555 @@ header_500: .ascii "HTTP/1.1 500 Internal Server Error"
 header_501: .ascii "HTTP/1.1 501 Not Implemented"
 .equ header_501_len, . - header_501
 
+header_503: .ascii "HTTP/1.1 503 Service Unavailable"
+.equ header_503_len, . - header_503
+
 header_505: .ascii "HTTP/1.1 505 HTTP Version Not Supported"
 .equ header_505_len, . - header_505
 
 header_507: .ascii "HTTP/1.1 507 Insufficient Storage"
 .equ header_507_len, . - header_507
 
+header_content_length: .ascii "\r\nContent-Length: "
+.equ header_content_length_len, . - header_content_length
+
+header_content_type: .ascii "\r\nContent-Type: "
+.equ header_content_type_len, . - header_content_type
+
+header_content_range: .ascii "\r\nContent-Range: bytes "
+.equ header_content_range_len, . - header_content_range
+
 header_tail:
-    .ascii "\r\nConnection: close\r\nContent-Length: 0\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
+    .ascii "\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_tail_len, . - header_tail
 
+err_dir: .ascii "err/"
+.equ err_dir_len, . - err_dir
+err_ext: .ascii ".html"
+.equ err_ext_len, . - err_ext
+
+arrows_out: .asciz "\n\n>>>\n"
+.equ arrows_out_len, . - arrows_out
+
+.align 3
+;; lookup table, like the MIME one, for headers. 24 bytes per entry, 8 bytes
+;; per each element
+status_table:
+    ;;    status, str pointer, length
+    .quad 200,    header_200,  header_200_len
+    .quad 201,    header_201,  header_201_len
+    .quad 204,    header_204,  header_204_len
+    .quad 206,    header_206,  header_206_len
+    .quad 400,    header_400,  header_400_len
+    .quad 403,    header_403,  header_403_len
+    .quad 404,    header_404,  header_404_len
+    .quad 408,    header_408,  header_408_len
+    .quad 409,    header_409,  header_409_len
+    .quad 411,    header_411,  header_411_len
+    .quad 413,    header_413,  header_413_len
+    .quad 414,    header_414,  header_414_len
+    .quad 416,    header_416,  header_416_len
+    .quad 418,    header_418,  header_418_len
+    .quad 431,    header_431,  header_431_len
+    .quad 500,    header_500,  header_500_len
+    .quad 501,    header_501,  header_501_len
+    .quad 503,    header_503,  header_503_len
+    .quad 505,    header_505,  header_505_len
+    .quad 507,    header_507,  header_507_len
+
+    .quad 0 ;; mark the end
+
+.bss
+.equ err_page_buf_size, 64
+.align 3
+err_page_buf: .skip err_page_buf_size
+.align 3
+.equ header_buf_size, RESPONSE_HEADER_SIZE
+header_buf:   .skip header_buf_size
+;header_len:   .skip 8
 
 .text
 .align 2
-
-reply_201:
-    adr_l x3, header_201
-    mov x4, header_201_len
-    b send_reply
-
-reply_204:
-    ; write to stdout for logging and stuff
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, header_204
-    mov x2, header_204_len
-    svc #0x80
-
-    ; write to socket
-    ldr_l x0, clientfd
-    adr_l x1, header_204
-    mov x2, header_204_len
-    bl write_all
-
-    b child_end
-
-reply_400:
-    adr_l x3, header_400
-    mov x4, header_400_len
-    b send_reply
-
-reply_403:
-    adr_l x3, header_403
-    mov x4, header_403_len
-    b send_reply
-
-reply_404:
-    adr_l x3, header_404
-    mov x4, header_404_len
-    b send_reply
-
-reply_408:
-    adr_l x3, header_408
-    mov x4, header_408_len
-    b send_reply
-
-reply_409:
-    adr_l x3, header_409
-    mov x4, header_409_len
-    b send_reply
-
-reply_411:
-    adr_l x3, header_411
-    mov x4, header_411_len
-    b send_reply
-
-reply_413:
-    adr_l x3, header_413
-    mov x4, header_413_len
-    b send_reply
-
-reply_414:
-    adr_l x3, header_414
-    mov x4, header_414_len
-    b send_reply
-
-reply_416:
-    adr_l x3, header_416
-    mov x4, header_416_len
-    b send_reply
-
-reply_418:
-    adr_l x3, header_418
-    mov x4, header_418_len
-    b send_reply
-
-reply_431:
-    adr_l x3, header_431
-    mov x4, header_431_len
-    b send_reply
-
-reply_500:
-    adr_l x3, header_500
-    mov x4, header_500_len
-    b send_reply
-
-reply_501:
-    adr_l x3, header_501
-    mov x4, header_501_len
-    b send_reply
-
-reply_505:
-    adr_l x3, header_505
-    mov x4, header_505_len
-    b send_reply
-
-reply_507:
-    adr_l x3, header_507
-    mov x4, header_507_len
-    b send_reply
-
-
 ;; input
-;; x3 -> header string
-;; x4 -> header length
+;; x0 -> status code
 ;;
-;; no output.
-;; clobbers x0-x3
-send_reply:
-    stp x29, x30, [sp, #-32]!
+;; returns
+;; x1 -> string pointer
+;; x2 -> length
+find_http_code:
+    adr_l x3, status_table
+1:
+    ;; load the first element
+    ldr x4, [x3]
+    cbz x4, 3f
+
+    ;; found the matching entry
+    cmp x4, x0
+    b.eq 2f
+
+    ;; jump to the next entry
+    add x3, x3, #24
+    b 1b
+
+2:
+    ldr x1, [x3, #8]
+    ldr x2, [x3, #16]
+    ret
+
+3:
+    mov x1, #0
+    mov x2, #0
+    ret
+
+.align 2
+;; build a header, store it into header_buf, and then write it to the socket
+;; in a loop, accounting for partial-writes.
+;; input
+;; x0 -> file length
+;; x1 -> start range (or -1 if no range)
+;; x2 -> end range
+;; x3 -> header type (#200, #404, #431, etc. literal number)
+;;
+;; output
+;; x0 -> header buffer
+;; x1 -> header length
+build_header:
+    stp x29, x30, [sp, #-64]!
+    stp x20, x21, [sp, #16]
+    stp x22, x23, [sp, #32]
+    str x24, [sp, #48]
+
+    mov x20, x0
+    mov x22, x1 ; start range
+    mov x23, x2 ; end range
+    mov x24, x3 ; header type
+
+    adr_l x13, header_buf
+    mov x14, #0 ; counter of bytes writteen to header_buf
+
+    mov x0, x24
+    bl find_http_code
+    cmp x1, #0
+    b.ne 1f
+
+    ;; if we're here, find header returned 0, which is... odd.
+    ;; let's actually reply with 500, since that shouldn't happen - it means
+    ;; build_header was called with an inaccurate HTTP statusl, which is our
+    ;; fault.
+    adr_l x1, header_500
+    mov x2, #header_500_len
+
+1:
+    mov x0, x13
+    ;; x1 is set by find_http_code
+    ;; so is x2!
+    ;; make sure we don't write past header_buf's memory!
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0 ;; store header_buf + offset, memcpy increments the pointer
+
+    b Lbh_content_length
+
+Lbh_content_length:
+    mov x2, header_content_length_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+
+    mov x0, x13
+    adr_l x1, header_content_length
+    ;; x2 is already set
+    bl memcpy
+    mov x13, x0
+
+    cmn x22, #1
+    b.eq 1f
+
+    ;; if we're sending a range, content-length should be end - start instead
+    sub x0, x23, x22
+    add x0, x0, #1
+    b 2f
+
+1:
+    ;; but if it's just a file, just grab the total file length.
+    mov x0, x20
+
+2:
+    bl itoa
+    ;; copy content-length string into header_buf
+    mov x2, x1  ; content_length_len (length of string)
+    mov x1, x0  ; content_length_str
+    mov x0, x13 ; header_buf + offset
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    ;; skip all this stuff for no range
+    cmn x22, #1
+    b.eq Lbh_content_type
+
+    ;; 206 path
+    ;; write Content-Range: bytes
+    adr_l x1, header_content_range
+    mov x2, header_content_range_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; start range
+    mov x0, x22
+    bl itoa
+
+    mov x2, x1
+    mov x1, x0
+    mov x0, x13
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; -
+    add x14, x14, #1
+    cb gt, x14, header_buf_size, Lheader_too_big
+    mov w0, #'-'
+    strb w0, [x13]
+    add x13, x13, #1
+
+    ;; end range
+    mov x0, x23
+    bl itoa
+
+    mov x2, x1
+    mov x1, x0
+    mov x0, x13
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ;; /
+    add x14, x14, #1
+    cb gt, x14, header_buf_size, Lheader_too_big
+    mov w0, #'/'
+    strb w0, [x13]
+    add x13, x13, #1
+
+    ;; total size
+    mov x0, x20
+    bl itoa
+
+    mov x2, x1  ; content_length_len (length of string)
+    mov x1, x0  ; content_length_str
+    mov x0, x13 ; header_buf + offset
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+Lbh_content_type:
+    ;; copy "\r\nContent-Type:" to buffer
+    ; x0 is already set from previous memcpy
+    adr_l x1, header_content_type
+    mov x2, header_content_type_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+    mov x13, x0
+
+    ldr_l x0, filename_str
+    ldr_l x1, filename_len
+bp1:
+    bl get_filetype
+bp2:
+
+    ;; write filename to header_buf
+    mov x2, x1 ; filename_len
+    mov x1, x0 ; source string, filename_str
+    mov x0, x13 ; destination, header_buf
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    ;; write the \r\n\r\n
+    ; x0 is still set from memcpy
+    adr_l x1, header_tail
+    mov x2, header_tail_len
+    add x14, x14, x2
+    cb gt, x14, header_buf_size, Lheader_too_big
+    bl memcpy
+
+    b Lbh_done
+Lheader_too_big:
+    mov x0, #0
+    str_l x0, header_len
+    cmp xzr, xzr ; set carry
+    b Lbh_epilogue
+
+Lbh_done:
+    str_l x14, header_len
+    cmn xzr, xzr ; clear carry
+    b Lbh_epilogue
+
+Lbh_epilogue:
+    ldr x24, [sp, #48]
+    ldp x22, x23, [sp, #32]
+    ldp x20, x21, [sp, #16]
+    ldp x29, x30, [sp], #64
+    ret
+
+.align 2
+;; input
+;; x0 -> http code
+;; x1 -> boolean, if 0 -> go to child_end; if nonzero -> ret
+;;
+;; returns
+;; nothing
+reply_status:
+    cbz x1, 1f ; skip the stack pushing shit if we're just gonna b child_end
+
+    stp x29, x30, [sp, #-96]!
     stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
+    stp x25, x26, [sp, #64]
+    str x27, [sp, #80]
+1:
+    mov x19, x0
 
-    mov x19, x3
-    mov x20, x4
+    ;; this is used to check if we should "b child_end", or "ret".
+    mov x27, x1
 
-    ; write to stdout for logging
-    mov x16, SYS_write
-    mov x0, #1
-    mov x1, x3
-    mov x2, x4
+    ;; this will eventually be open()'d file descriptor. gonna save it so we can
+    ;; check if a file has been opened, and close it, in sc_err.
+    mov x23, #-1
+
+    ;; make sure the error code is valid: not an error below 400, and we don't
+    ;; support anything above 507 (currently).
+    cmp x0, #400
+    b.hs 1f
+    cmp x0, #507
+    b.ls 1f
+
+    ;; if we get here, we were given an http code that's not an error exactly.
+    ;; so, don't try to treat is as an error. just write the header. it's
+    ;; probably PUT doing 201/204, or DELETE doing 204.
+    ;; x0 is already set, so is x19.
+
+    b sc_err ; ironically called sc_err. prob should rename.
+
+1:
+    mov x20, #0 ;; how many bytes have we written to err_page_buf?
+    mov x26, err_page_buf_size
+    ;; do some bounds checks
+    mov x21, #err_dir_len
+    add x20, x20, x21
+    cmp x20, x26
+
+    b.hi sc_err
+
+    ;; copy "err/" or whatever err_dir is set to, to err_page_buf
+    adr_l x0, err_page_buf
+    adr_l x1, err_dir
+    mov x2, #err_dir_len
+    bl memcpy
+    mov x22, x0 ; save pointer with offset from mempcy
+
+    ;; itoa the error code
+    mov x0, x19
+    bl itoa
+
+    ;; bounds check
+    add x20, x20, x1 ; x1 is length of itoa'd string from itoa
+    cmp x20, x26
+
+    b.hi sc_err
+
+    ;; copy the itoa'd shit
+    mov x2, x1
+    mov x1, x0
+    mov x0, x22
+    bl memcpy
+    mov x22, x0 ; save it again
+
+    ;; one last bounds check. gotta copy the ".html".
+    mov x21, err_ext_len
+    add x20, x20, x21
+    cmp x20, x26
+
+    b.hi sc_err
+
+    ;; now copy it
+    mov x0, x22
+    adr_l x1, err_ext
+    mov x2, err_ext_len
+    bl memcpy
+    mov x22, x0 ; save that shit! yes! i FUCKIN G LOVE SAVING POINTERS
+
+    ;; we also gotta save it to filename_str so build_header can work with it
+    adr_l x0, err_page_buf
+    str_l x0, filename_str
+    str_l x20, filename_len
+
+    ;; ok now err_page_buf should be something like "err/404.html". now we
+    ;; gotta basically GET that shit.
+    mov x16, SYS_open
+    adr_l x0, err_page_buf
+    mov x1, #0 ; RDONLY
+    orr x1, x1, #O_NOFOLLOW_ANY ;; can't be too careful now can we?
     svc #0x80
 
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, header_tail
-    mov x2, header_tail_len
+    b.cs sc_err
+    mov x23, x0 ; save the fd
+
+    ;; x0 is still set tho
+    bl stat_fd
+    cbnz x0, sc_err
+    cmp w1, #S_IFREG
+
+    b.ne sc_err
+    cmp x2, #0
+
+    b.eq sc_err ;; empty file, just do the http code alone
+    mov x24, x2 ;; save the file size
+
+    mov x0, x24
+    mov x1, #-1
+    mov x2, #-1
+    mov x3, x19
+    bl build_header
+
+    ;; mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0)
+    mov x16, SYS_mmap
+    mov x0, #0
+    mov x1, x24
+    mov x2, #1 ; PROT_READ
+    mov x3, #2 ; MAP_PRIVATE
+    mov x4, x23 ; from open()
+    mov x5, #0 ; offset
     svc #0x80
 
-    ;; now write to the socket with write_all.
+    b.cs sc_err
+
+    ;; x0 is now the pointer to memory for the file. save it for now.
+    mov x25, x0
+
     ldr_l x0, clientfd
-    mov x1, x19
-    mov x2, x20
+    adr_l x1, header_buf
+    ldr_l x2, header_len
     bl write_all
 
-    ;; the end of the header
     ldr_l x0, clientfd
-    adr_l x1, header_tail
-    mov x2, header_tail_len
+    mov x1, x25
+    mov x2, x24
+    bl write_all
+    ;; munmap the file now
+    mov x16, SYS_munmap
+    mov x0, x25
+    mov x1, x24
+    svc #0x80
+    b sc_epilogue
+
+sc_err:
+    ;; if something went wrong during this function, just send the header by
+    ;; itself -- with no body. no custom pages if opening the custom page
+    ;; didn't work :(
+    mov x0, #0
+    mov x1, #-1
+    mov x2, #-1
+    mov x3, x19
+    bl build_header
+
+    ldr_l x0, clientfd
+    adr_l x1, header_buf
+    ldr_l x2, header_len
     bl write_all
 
-    ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #32
+sc_epilogue:
+    ;; write the \n\n>>>\n to indicate data we're sending
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, arrows_out
+    mov x2, arrows_out_len
+    svc #0x80
 
+    ;; write the header to stdout
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, header_buf
+    ldr_l x2, header_len
+    svc #0x80
+
+    cmn x23, #1
+    b.eq 1f
+
+    mov x16, SYS_close
+    mov x0, x23
+    svc #0x80
+1:
+    cbnz x27, 3f ; if x27 (x1) is nonzero, ret instead of branching to child_end
+2:
     b child_end
+3:
+    ldr x27, [sp, #80]
+    ldp x25, x26, [sp, #64]
+    ldp x23, x24, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #96
+    ret
+    
 
 
 ;; handler function for fstat64() failing. route to the proper HTTP reponse
 ;; based on errno.
+;; TODO this should probably go in file.S?
 ;; input
 ;; x0 -> errno
 ;;
 ;; output
-;; none, branches to reply_* and quits.
+;; none, branches to reply_status and quits.
 handle_fs_error:
-    cb eq, x0, #ENAMETOOLONG, reply_414
-    cb eq, x0, #EINVAL, reply_400
+    cb eq, x0, #ENAMETOOLONG, L414
+    cb eq, x0, #EINVAL, L400
     ;; 403 since it's caused by O_NOFOLLOW_ANY most likely. if we ever allow
     ;; symlinks, note that this should be 508.
-    cb eq, x0, #ELOOP, reply_403
-    cb eq, x0, #ENOTDIR, reply_404
-    cb eq, x0, #ENOENT, reply_404
-    cb eq, x0, #EACCES, reply_403
-    cb eq, x0, #EPERM, reply_403
-    cb eq, x0, #EROFS, reply_403
-    cb eq, x0, #EISDIR, reply_403
-    cb eq, x0, #EFAULT, reply_500
-    cb eq, x0, #EBUSY, reply_409
-    cb eq, x0, #ENOTEMPTY, reply_409
-    cb eq, x0, #ENOSPC, reply_507
-    cb eq, x0, #EDQUOT, reply_507
-    cb eq, x0, #EFBIG, reply_413
+    cb eq, x0, #ELOOP, L403
+    cb eq, x0, #ENOTDIR, L404
+    cb eq, x0, #ENOENT, L404
+    cb eq, x0, #EACCES, L403
+    cb eq, x0, #EPERM, L403
+    cb eq, x0, #EROFS, L403
+    cb eq, x0, #EISDIR, L403
+    cb eq, x0, #EFAULT, L500
+    cb eq, x0, #EBUSY, L409
+    cb eq, x0, #ENOTEMPTY, L409
+    cb eq, x0, #ENOSPC, L507
+    cb eq, x0, #EDQUOT, L507
+    cb eq, x0, #EFBIG, L413
 
-    b reply_500
+    b L500
+
+L400:
+    mov x0, #400
+    b reply_status
+L403:
+    mov x0, #403
+    b reply_status
+L404:
+    mov x0, #404
+    b reply_status
+L409:
+    mov x0, #409
+    b reply_status
+L413:
+    mov x0, #413
+    b reply_status
+L414:
+    mov x0, #414
+    b reply_status
+L500:
+    mov x0, #500
+    b reply_status
+L507:
+    mov x0, #507
+    b reply_status

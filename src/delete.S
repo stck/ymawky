@@ -46,7 +46,7 @@ delete:
     svc #0x80
     b.cs Lunlink_failed
 
-    b reply_204
+    b L204
 
 ;; these are really the same case, tbqh. the errno checks are the same. i use
 ;; different label names for clarity when reading hehe
@@ -69,11 +69,27 @@ Lunlink_failed:
     cb eq, x0, #ELOOP, L403
 
     ;; just default to 500
-    b reply_500
+    b L500
 
 
 ;; trampolines for conditional branches across files.
-L204: b reply_204
-L400: b reply_400
-L403: b reply_403
-L409: b reply_409
+L204:
+    mov x0, #204
+    mov x1, #0
+    b reply_status
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status
+L409:
+    mov x0, #409
+    mov x1, #0
+    b reply_status
+L500:
+    mov x0, #500
+    mov x1, #0
+    b reply_status

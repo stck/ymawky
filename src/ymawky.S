@@ -83,8 +83,21 @@ http_1_1: .ascii "HTTP/1.1"
 host_str: .ascii "Host"
 .equ host_str_len, . - host_str
 
-header_503: .ascii "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\nServer: ymawky\r\n\r\n"
-.equ header_503_len, . - header_503
+;header_503: .ascii "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\nServer: ymawky\r\n\r\n"
+;.equ header_503_len, . - header_503
+
+arrows_in: .ascii "\n\n<<<\n"
+.equ arrows_in_len, . - arrows_in
+
+ymawky_connecting: .asciz "ymawky is connecting... "
+.equ ymawky_connecting_len, . - ymawky_connecting
+
+ymawky_connected: .asciz "connected!\n"
+.equ ymawky_connected_len, . - ymawky_connected
+
+ymawky_shutdown: .asciz "ymawky is shutting down :(\n"
+.equ ymawky_shutdown_len, . - ymawky_shutdown
+
 
 .bss
 .align 3
@@ -129,6 +142,12 @@ _main:
     strh w0, [x1, #2]
 
 skip_argv:
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, ymawky_connecting
+    mov x2, ymawky_connecting_len
+    svc #0x80
+
     ;; socket(AF_INET, SOCK_STREAM, 0)
     mov x16, SYS_socket
     mov x0, #2 ; AF_INET
@@ -163,6 +182,12 @@ skip_argv:
     mov x1, #5
     svc #0x80
     b.cs exit
+
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, ymawky_connected
+    mov x2, ymawky_connected_len
+    svc #0x80
 
     ;; debug flag check. skip past the fork stuff in x28 is set
     cbnz x28, 1f
@@ -211,11 +236,9 @@ Lreap:
 
     ;; uh-oh, we're at the max processes. let's give a nice, kind, smart, cute,
     ;; lil, friendly 503 :3
-    mov x16, SYS_write
-    ldr_l x0, clientfd
-    adr_l x1, header_503
-    mov x2, header_503_len
-    svc #0x80
+    mov x0, #503
+    mov x1, #1 ; we DO want to return here!
+    bl reply_status
     b 2f ; close n loop!
 
 8:
@@ -344,7 +367,9 @@ Lno_header:
     b.ne 1f ; if nonzero, check buffer fill state
     cmp x7, #0 ; if we read nothing,
     b.eq child_end ; go to child_end and silently exit
-    b reply_400 ; otherwise if we're done reading but still no header, send 400
+
+    ; otherwise if we're done reading but still no header, send 400
+    b L400
 
 1:
     cmp x7, #BUF_SIZE
@@ -369,7 +394,7 @@ read_failed:
     cb eq, x0, #EHOSTDOWN, child_end
     cb eq, x0, #EHOSTUNREACH, child_end
 
-    b reply_500
+    b L500
 
 2:
     ;; disarm timer
@@ -384,11 +409,18 @@ read_failed:
     adr_l x1, buf
     strb wzr, [x1, x24] ; x24 -> length of bytes read
 
+    ;; write \n\n<<<\n to stdout to mark a header we're receiving
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, arrows_in
+    mov x2, arrows_in_len
+    svc #0x80
+
     ;; this just writes the request to stdout
-    mov x2, x23
     mov x16, SYS_write
     mov x0, #1
     adr_l x1, buf
+    mov x2, x23
     svc #0x80
 
     adr_l x0, buf
@@ -445,7 +477,7 @@ read_failed:
     b.eq L418
 
     ;; if it was none of the above, reply 501
-    b reply_501
+    b L501
 
 Lget_method:
     adr_l x0, buf
@@ -481,6 +513,12 @@ child_end:
 
 
 exit:
+    mov x16, SYS_write
+    mov x0, #1
+    adr_l x1, ymawky_shutdown
+    mov x2, ymawky_shutdown_len
+    svc #0x80
+
     ;; shutdown(sockfd, SHUT_RDRW)
     mov x16, SYS_shutdown
     ldr_l x0, sockfd
@@ -568,7 +606,7 @@ verify_http_version:
     b.eq L505
 
     ;; oops. none.
-    b reply_400
+    b L400
 
 Lhttp11:
     ;; if it's 1.1, we need a Host: field.
@@ -590,9 +628,31 @@ vh_epilogue:
     ldp x29, x30, [sp], #32
     ret
 
-L400: b reply_400
-L408: b reply_408
-L418: b reply_418
-L431: b reply_431
-L500: b reply_500
-L505: b reply_505
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
+L408:
+    mov x0, #408
+    mov x1, #0
+    b reply_status
+L418:
+    mov x0, #418
+    mov x1, #0
+    b reply_status
+L431:
+    mov x0, #431
+    mov x1, #0
+    b reply_status
+L500:
+    mov x0, #500
+    mov x1, #0
+    b reply_status
+L501:
+    mov x0, #501
+    mov x1, #0
+    b reply_status
+L505:
+    mov x0, #505
+    mov x1, #0
+    b reply_status

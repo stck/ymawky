@@ -19,8 +19,14 @@ options:
     cmp w1, #S_IFREG
     b.eq L403
 
-    b reply_204
+    b L204
 
 Lhfs_err: b handle_fs_error
-L204: b reply_204
-L403: b reply_403
+L204:
+    mov x0, #204
+    mov x1, #0
+    b reply_status
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status
