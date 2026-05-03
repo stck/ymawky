@@ -8,8 +8,10 @@ Requires Xcode Command Line Tools. Install with `xcode-select --install`.
 ymawky only runs on apple silicon (arm64).
 
 Run `make` to build.
+
 Ensure there is a `www/` directory next to the `ymawky` executable. That's the document root where *ymawky* searches for files.
 `GET` with an empty filename (`GET /`) will search for `www/index.html`, so you might want to make sure there's an `index.html` as well.
+
 *ymawky* will try to serve static error pages when a client's request results in error, eg 404. The pages it searches for in `err/(code).html`, so ensure `err/` exists alongisde `ymawky` and `www/`.
 See [Configuration](#configuration) to modify the default file and docroot.
 
@@ -44,6 +46,7 @@ ymawky is a static-file web server. It doesn't support server-side code to gener
 - `Content-Length:` parsing and verification in `PUT` requests
 - MIME type detection, giving `Content-Type` in the response header with the corresponding MIME type
 - Accepts `Range: bytes=` ranges in GET requests, supporting full ranges `bytes=X-N`, suffix ranges `bytes=-N`, and open-ended ranges `bytes=X-`. Video scrubbing is well supported
+- Basic HTTP version parsing. Requests need to specify `HTTP/1.1` or `HTTP/1.0`, and if requesting `HTTP/1.1`, a `Host:` field needs to be present in the header. Currently, ymawky doesn't do anything with Host, but per RFC 9112 Section 3.2, the Header must be sent
 - Serves custom HTML pages for error codes, such as 404, or 500. Look in the `err/` directory for an example
 
 ## "Safety"
@@ -79,6 +82,7 @@ ymawky currently supports and can reply with the following status codes:
 - `503 Service Unavailable`
 - `505 HTTP Version Not Supported`
 - `507 Insufficient Storage`
+
 Custom HTML pages will be served alongside the error codes (400+). These HTML files are located in `err/(code).html`. You can use `build_err_pages.sh` to create a page for each code, with different text at your leisure. Edit the source code of `build_err_pages.sh` to modify the text per-page, and modify `err/template.html` to modify the base template. In `err/template.html`:
 - `{{CODE}}`  - HTTP Code: eg, 404
 - `{{TITLE}}` - Title text: eg, "Not Found"
@@ -156,6 +160,7 @@ You can configure ymawky with the `config.S` file. The options are documented he
   - `#define DEFAULT_DIR "www/"`
   - `#define DEFAULT_DIR "/Library/WebServer/Documents`
   - `#define DEFAULT_DIR "./"`
+- `#default ERR_DIR "err/"` -- This is the directory in which ymawky will search for custom error HTML pages, eg, `err/404.html` or `err/500.html`
 - `#define DEFAULT_FILE "index.html"` -- This is the default file ymawky will serve when it receives an empty `GET / HTTP/1.1` request
 - `.equ RECV_TIMEOUT, 10` -- Number of seconds ymawky will wait to receive datta before closing the connection. If it's more than `RECV_TIMEOUT` seconds between `read()`s, ymawky will close the connection with `408 Request Timed Out`
 - `.equ HEADER_REQ_TIMEOUT_SECS, 10` -- Maximum number of seconds ymawky will wait to receive the full header before timing out. If it takes, longer than this to receive the header, ymawky will close the connection with `408 Request Timed Out`

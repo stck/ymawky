@@ -655,7 +655,7 @@ Lchar_found:
     mov x4, www_prefix_len
 Lfilename_loop:
     cmp x4, filename_buf_size ; bounds check
-    b.ge Lno_match
+    b.ge L414
 
     ldrb w3, [x0, x2] ; load byte from header+index
     cbz w3, Lno_match ; is it NULL? go to 4f if it is
@@ -863,6 +863,10 @@ L400:
     b reply_status
 L403:
     mov x0, #403
+    mov x1, #0
+    b reply_status
+L414:
+    mov x0, #414
     mov x1, #0
     b reply_status
 L500:
