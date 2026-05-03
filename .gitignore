@@ -3,3 +3,4 @@ ymawky
 !.gitignore
 err/*
 !err/template.html
+www/.*
