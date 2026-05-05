@@ -61,7 +61,7 @@ encoded_lt: .ascii "&lt;"
 
 ;; chunked encoding header. TODO refactor build_header to incorporate this
 ;; and other potential header fields
-header: .ascii "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nTransfer-Encoding: chunked\r\nX-Content-Type-Options: nosniff\r\nServer: ymawky\r\nConnection: close\r\n\r\n"
+header: .ascii "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nTransfer-Encoding: chunked\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ header_len, . - header
 
 hex_digits: .ascii "0123456789ABCDEF"

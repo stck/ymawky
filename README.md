@@ -48,6 +48,7 @@ ymawky is a static-file web server. It doesn't support server-side code to gener
 - Accepts `Range: bytes=` ranges in GET requests, supporting full ranges `bytes=X-N`, suffix ranges `bytes=-N`, and open-ended ranges `bytes=X-`. Video scrubbing is well supported
 - Basic HTTP version parsing. Requests need to specify `HTTP/1.1` or `HTTP/1.0`, and if requesting `HTTP/1.1`, a `Host:` field needs to be present in the header. Currently, ymawky doesn't do anything with Host, but per RFC 9112 Section 3.2, the Header must be sent
 - Serves custom HTML pages for error codes, such as 404, or 500. Look in the `err/` directory for an example
+- If the requested resource is a directory, list all files and subdirs in the directory. Note that this excludes www/ (or whatever your docroot is): GET / will always search for index.html if no file is given.
 
 ## "Safety"
 This is a web server written entirely by-hand in ARM64 assembly as a fun project. It's probably got a lot of vulnerabilities I'm unaware of. However, I did do my best to make it safer. Here are some safety precautions ymawky takes.
