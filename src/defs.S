@@ -48,8 +48,19 @@
 .equ SYS_proc_info,    336
 .equ SYS_stat64,       338
 .equ SYS_fstat64,      339
+.equ SYS_getdirentries64, 344
 .equ SYS_unlinkat,     472
 .equ SYS_renameatx_np, 488
+
+;; stuff for getdirentries64
+;; dir entry buffer struct
+.equ OFF_D_INTO,    0  ; load with ldr
+.equ OFF_D_SEEKOFF, 8  ; load with ldr
+.equ OFF_D_RECLEN,  16 ; load with ldrh
+.equ OFF_D_NAMLEN,  18 ; load with ldrh
+.equ OFF_D_TYPE,    20 ; load with ldrb
+.equ OFF_D_NAME,    21 ; load with add xN, x19, #OFF_D_NAME
+.equ DT_DIR,        4
 
 ;; proc stuff
 .equ PROC_INFO_CALL_LISTPIDS, 1
@@ -60,6 +71,7 @@
 
 ;; stuff for file.S
 .equ S_IFREG,        0x8000
+.equ S_IFDIR,        0x4000
 
 ;; errno values
 .equ EPERM,          1
@@ -96,6 +108,7 @@
 .equ SA_NOCLDWAIT,   0x0020
 
 ;; oflags values for open()
+.equ O_RDONLY,       0x0000
 .equ O_WRONLY,       0x0001
 .equ O_CREAT,        0x0200
 .equ O_TRUNC,        0x0400

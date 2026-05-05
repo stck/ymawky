@@ -57,6 +57,7 @@ file_des:    .skip 8
 ;;
 ;; output
 ;; x0 -> length of file
+;; x1 -> file type, w1 can be S_IFREG or S_IFDIR
 ;; NOTE this function opens a file and doesn't close it -- it saves the open
 ;; file descriptor in .bss, file_des. be sure to close it!
 get_setup:
@@ -82,8 +83,13 @@ get_setup:
 
     bl stat_fd
     cbnz x0, Lhfs_err
+bpg:
     cmp w1, #S_IFREG
-    b.ne L403
+    b.eq Lgs_epilogue
+    cmp w1, #S_IFDIR
+    b.eq Lgs_epilogue
+
+    b L403
 
 Lgs_epilogue:
     mov x0, x2
@@ -131,6 +137,8 @@ get:
     mov x21, x1
 
     bl get_setup
+    cmp w1, #S_IFDIR
+    b.eq Ldir_list
 
     ;; let's save file length into x19! please? we need to use it but only in
     ;; this func -- i really don't wanna do more stack shit here...
@@ -312,4 +320,10 @@ L500:
     mov x0, #500
     mov x1, #0
     b reply_status
+
+Ldir_list:
+    ldr_l x0, file_des
+    ldr_l x1, filename_str
+    ldr_l x2, filename_len
+    b dir_listing
 Lhfs_err: b handle_fs_error

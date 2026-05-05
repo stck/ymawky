@@ -580,12 +580,18 @@ pcl_epilogue:
 ;; clobbers x0, x1, x2, x3
 parse_path:
     ;; preserve link register so we can bl to other functions properly
-    stp x29, x30, [sp, #-48]!
+    stp x29, x30, [sp, #-64]!
     stp x20, x21, [sp, #16]
     stp x22, x23, [sp, #32]
+    str x24, [sp, #48]
 
     mov x22, x1 ;; save header length in x22
     mov x20, x2 ;; save bool option in x20.
+
+    ;; length of the docroot string needs to be accessible to directory.S.
+    ;; shove that shit in .bss NOW
+    mov x2, www_prefix_len
+    str_l x2, docroot_len
 
     cmp x22, #16 ;; make sure the header is at least 16 bytes long
     b.lo L400
@@ -653,6 +659,7 @@ Lchar_found:
     ;; relative index (x2 + 4, to skip the starting "GET ") into the header
     mov x2, #0
     mov x4, www_prefix_len
+    mov x24, #1 ;; x24 = is the last processed a slash? here, it is
 Lfilename_loop:
     cmp x4, filename_buf_size ; bounds check
     b.ge L414
@@ -669,17 +676,38 @@ Lfilename_loop:
     cmp w3, #'\n'
     b.eq Lno_match
 
+    cmp w3, #'/'
+    b.eq Lslash
+    mov x24, #0 ; 0 means last char was not a slash, 1 means last char was
+1:
     ;; ok, we're not done
     strb w3, [x1, x4] ; copy byte to filename_buf+index
     add x4, x4, #1 ; increment the filename index
     add x2, x2, #1 ; increment the header index
     add x23, x23, #1 ; increment the total index
 
+2:
     ;; bounds check!
     cmp x23, x22
     b.hi Lno_match
 
     b Lfilename_loop
+
+;; strip multiple /'s into a single /
+Lslash:
+    cmp x24, #0
+    b.eq 3f
+
+    ;; if the previous char was a slash, just skip this one
+    mov x24, #1 ; set x24 to mark we processed a slash
+    add x2, x2, #1 ; advance header index
+    add x23, x23, #1 ; advance total counter
+    b 2b
+3:
+    ;; if the last char was not a slash, mark this char as being one, and copy
+    ;; anyway.
+    mov x24, #1
+    b 1b
 
 Lfilename_done:
     ;; is the length the same as the www/ prefix? if it is, we didn't actually
@@ -755,9 +783,10 @@ Lparse_return:
     cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
 1:
     ;; restore the link register and ret
+    ldr x24, [sp, #48]
     ldp x22, x23, [sp, #32]
     ldp x20, x21, [sp, #16]
-    ldp x29, x30, [sp], #48
+    ldp x29, x30, [sp], #64
     ret
 
 ;; input

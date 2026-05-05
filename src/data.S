@@ -5,6 +5,7 @@
 .global clientfd
 .global filename_str
 .global filename_len
+.global docroot_len
 
 .bss
 ;; + 1 so we can NULL terminate, even if content is BUF_SIZE bytes long
@@ -14,3 +15,4 @@ header_len:   .skip 8
 clientfd:     .skip 8
 filename_str: .skip 8
 filename_len: .skip 8
+docroot_len:  .skip 8
