@@ -615,17 +615,12 @@ wch_epilogue:
 ;; returns
 ;; nothing
 dir_listing:
-    ;mov x16, SYS_open
-    ;adr_l x0, filename_str
-    ;mov x1, #O_RDONLY
-    ;svc #0x80
-    ;b.cs Lhfs_error
-
-    ;str_l x0, dirfd
-
     mov x20, x0 ; file descriptor
     mov x21, x1 ; filename
     mov x22, x2 ; filename len
+
+    mov x0, ALLOW_DIR_LISTING
+    cbz x0, L403
 
     ldr_l x0, docroot_len
     add x21, x21, x0 ; skip past the docroot
@@ -699,6 +694,7 @@ gde_err:
     svc #0x80
 
 gde_done:
+    ;; restore stack space
     mov x0, #8208
     add sp, sp, x0
 
@@ -752,3 +748,8 @@ Lstore:
     ;; we're done
     mov x0, x3
     ret
+
+L403:
+    mov x0, #403
+    mov x1, #0
+    b reply_status

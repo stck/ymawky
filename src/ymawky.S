@@ -18,6 +18,7 @@
 
 .global _main
 .global child_end
+.extern _sleep
 
 .data
 .align 3
@@ -513,6 +514,13 @@ child_end:
     ldr_l x0, clientfd
     svc #0x80
 
+    ldr_l x0, file_des
+    cmn x0, #1
+    b.eq 1f
+    mov x16, SYS_close
+    ; x0 is set
+    svc #0x80
+1:
     ;; This is always for children, so let's exit. the parent will loop
     mov x16, SYS_exit
     mov x0, #0

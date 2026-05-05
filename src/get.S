@@ -41,13 +41,6 @@ good_response_tail:
     .ascii "\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n\r\n"
 .equ good_response_tail_len, . - good_response_tail
 
-.bss
-.align 3
-file_des:    .skip 8
-;.equ header_buf_size, 512
-;header_buf:  .skip header_buf_size
-;header_len:  .skip 8
-
 .text
 .align 2
 
@@ -59,7 +52,8 @@ file_des:    .skip 8
 ;; x0 -> length of file
 ;; x1 -> file type, w1 can be S_IFREG or S_IFDIR
 ;; NOTE this function opens a file and doesn't close it -- it saves the open
-;; file descriptor in .bss, file_des. be sure to close it!
+;; file descriptor in file_des, which is in data.S's .data. child_end should
+;; close it, but be aware!
 get_setup:
     stp x29, x30, [sp, #-16]!
 
@@ -83,7 +77,7 @@ get_setup:
 
     bl stat_fd
     cbnz x0, Lhfs_err
-bpg:
+
     cmp w1, #S_IFREG
     b.eq Lgs_epilogue
     cmp w1, #S_IFDIR
@@ -118,10 +112,7 @@ head:
     ;; is what we're doing here anyway. can't write 500 Internal Server Error
     ;; in the middle of another header, lol.
 
-    ;; we really just gotta close the file and exit
-    mov x16, SYS_close
-    ldr_l x0, file_des
-    svc #0x80
+    ;; child_end will close the file descriptor
     b child_end
 
 
@@ -294,11 +285,7 @@ Lwrite_done:
 
 ;; close the file
 Lget_end:
-    mov x16, SYS_close
-    ldr_l x0, file_des
-    svc #0x80
-
-1:
+    ;; child_end will close the file descriptor
     b child_end
 
 
@@ -326,4 +313,5 @@ Ldir_list:
     ldr_l x1, filename_str
     ldr_l x2, filename_len
     b dir_listing
+
 Lhfs_err: b handle_fs_error

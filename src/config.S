@@ -48,3 +48,9 @@
 ;; the buffer in ymawky.S. I'll leave that as an exercise to the reader.
 ;; Default: 256
 .equ MAX_PROCS, 256
+
+;; Allow GET /dir to list the directory's contents, or just 403?
+;; 0: Do not allow directory contents to be listed.
+;; 1 (or anything non-zero): Yes, allow directory contents to be listed
+;; Default: 1
+.equ ALLOW_DIR_LISTING, 1
