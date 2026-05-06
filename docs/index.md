@@ -1,6 +1,5 @@
 ---
-title: ymawky
-description: a static http server in aarch64 assembly
+layout: default
 ---
 # building a web server in aarch64 assembly to give my life (a lack of) meaning
 `ymawky` is a small, static http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, and tries to be as hardened as possible.
