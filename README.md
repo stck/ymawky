@@ -1,4 +1,4 @@
-![ymawky](ymawky.png)
+![](docs/ymawky.png)
 
 # *ymawky* -- web server in ARM assembly
 This is *ymawky* (yuh maw kee), a web server written entirely in ARM64 assembly. ymawky is a syscall-only, no libc, fork-per-connection web server written by hand. While it is developed for MacOS, I've tried to make it as portable as possible -- *however*, it's likely you will still need to make some ~~(hopefully minor)~~ Significant tweaks to get this to run on Linux/other Unix systems. See [Implementation Notes](#implementation-notes) for more details.

@@ -1,5 +1,6 @@
 ---
 layout: default
+title: ymawky
 ---
 # building a web server in aarch64 assembly to give my life (a lack of) meaning
 `ymawky` is a small, static http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, and tries to be as hardened as possible.
@@ -7,6 +8,8 @@ layout: default
 why? why not? the dream of the 80s is alive in `ymawky`. everybody has nginx. having apache makes you a square. so why not strip every single convenience layer that computer science has given us since 1957? i wanted to understand how a web server, something i knew very little about in the first place, actually works. the risks that come up, the problems that need to be solved, the things you don't think about when you're writing python or c.
 
 this *(probably)* won't replace nginx, but it *is* doing something in the most difficult way possible.
+
+![](ymawky.png)
 
 ## constraints
 i gave myself some constraints for this project:
