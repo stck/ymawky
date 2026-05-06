@@ -31,6 +31,27 @@ assembly language is the layer between machine code and other languages. c gets 
 you get almost no abstractions. you move values around between cpu registers and memory, compare them, jump to different portions of your code, and call the kernel for syscalls. it makes simple things look complicated, but it also makes almost every step the cpu takes visible and under your control. it does exactly what you tell it to, without warnings, and without any help. if it's behaving incorrectly, it's because *you* wrote it incorrectly.
 
 writing a web server in assembly means there are no http libraries. no automatic cleanup. no string types: strings are just regions of memory that hold individual bytes sequentially. a `struct` as it exists in c doesn't really exist as a language feature. you have to know the exact offset in bytes between each field, and the total size of the struct, or the cpu will happily read the wrong memory.
+
+## raw syscalls
+
+ymawky doesn't use any libc wrappers, it just uses raw calls to the kernel. take, for example, this snippet of code that opens a file:
+
+```asm
+mov x16, #5 ; SYS_open syscall number
+adrp x0, filename@PAGE
+add x0, x0, filename@PAGEOFF
+mov x1, #0x0 ; O_RDONLY is just 0x0000
+svc #0x80
+b.cs open_failed
+```
+
+in darwin, the syscall number goes in the `x16` register (in aarch64 linux, it goes in `x8`). syscall number 5 is `open()`, which takes a couple arguments: filename and mode. you put each argument in the registers by hand, then call the kernel with `svc #0x80`.
+
+if `open()` fails, the carry flag is set. we check that with `b.cs open_failed`, which means "if the carry flag is set, branch to `open_failed`". then we have to write `open_failed` to do whatever cleanup and response handling is needed.
+
+this happens a lot. assembly doesn't have "exceptions" or "objects", it just sets a cpu flag that you have to check and deal with.
+
+
 ## general overview
 at its most basic, a web server receives a request, processes it, returns a status code, and maybe a file. a lot goes into that "receives a request" bit:
 
@@ -68,25 +89,6 @@ binding to sockets and listening is the easy part. the real soul-crushing task i
 * closing any open files
 * handling errors without crashing the server
 
-## raw syscalls
-
-ymawky doesn't use any libc wrappers. it just uses raw calls to the kernel. take, for example, this snippet of code that opens a file:
-
-```asm
-mov x16, #5 ; SYS_open syscall number
-adrp x0, filename@PAGE
-add x0, x0, filename@PAGEOFF
-mov x1, #0x0 ; O_RDONLY is just 0x0000
-svc #0x80
-b.cs open_failed
-```
-
-in darwin, the syscall number goes in the `x16` register (in aarch64 linux, it goes in `x8`). syscall number 5 is `open()`, which takes a couple arguments: filename and mode. you put each argument in the registers by hand, then call the kernel with `svc #0x80`.
-
-if `open()` fails, the carry flag is set. we check that with `b.cs open_failed`, which means "if the carry flag is set, branch to `open_failed`". then we have to write `open_failed` to do whatever cleanup and response handling is needed.
-
-this happens a lot. assembly doesn't have "exceptions" or "objects", it just sets a cpu flag that you have to check and deal with.
-
 ## parsing http by hand
 
 i *hate* string parsing. *especially* in assembly. unfortunately, an http request is just a string asking a server to do something, and the server has to understand it.
@@ -117,7 +119,7 @@ filename_buffer: .skip 4097
 .align 3
 ```
 
-copying the filename is just a loop, but the loop has to constantly check both sides: don't read past the header, and don't write past the filename buffer. if the client sends 5000 `a`s, they should get `414 URI Too Long` rather than overwriting 5KB of arbitrary memory.
+copying the filename is just a loop, but the loop has to constantly check both sides: don't read past the header, and don't write past the filename buffer. if the client requests `GET /aa...[5000 A]...a HTTP/1.0`, they should get `414 URI Too Long` rather than overwriting 5KB of arbitrary memory.
 
 in python, this is something like:
 
@@ -337,7 +339,7 @@ in order for request timeouts to work, we have to use `setitimer()` (syscall #83
 
 we use `sigaction()` (syscall #46). on darwin, the raw sigaction struct exposes a `sa_tramp` field. typically, libc will set up `sa_tramp` *for* you, and you don't have to think about it. it saves the stack, registers, sets up `sigreturn`, all that jazz, and then branches into your handler. if `sa_tramp` *doesn't* do that, the program won't know where to return to when the handler is done.
 
-but in ymawky, the timeout handler never *needs* returns. it sends a `408 Request Timeout`, closes what it needs to close, and exits the child. because it never returns, i can point the trampoline slot at code that performs the timeout response directly, and bypass `sa_handler` and `sigreturn` entirely.
+but in ymawky, the timeout handler never *needs* to return. it sends a `408 Request Timeout`, closes what it needs to close, and exits the child. because it never returns, i can point the trampoline slot at code that performs the timeout response directly, and bypass `sa_handler` and `sigreturn` entirely.
 
 apple also has a little-documented syscall, `proc_info()` (syscall #336), which allows you to get information about a running process, including its children. this is normally used by tools like `ps`, `lsof`, and `top`, but ymawky uses it to count active child processes.
 
