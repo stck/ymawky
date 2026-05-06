@@ -232,7 +232,7 @@ if you `GET /somedir/`, we check if directory listing is enabled (`ALLOW_DIR_LIS
 if it is allowed, we call `getdirentries64()` (syscall #344) on the requested directory. this fills a buffer with information about every file in the directory. importantly for us, it includes the name of each file, and the length of the filename.
 
 we use that name information to build some HTML, making the directory listing clickable-and-pretty.
-![directory listing in ymawky](dirlisting.png)
+![directory listing in ymawky](dirlist.png)
 
 for each file, we write this to the client:
 ```html
