@@ -3,9 +3,9 @@ layout: default
 title: ymawky
 ---
 # building a web server in aarch64 assembly to give my life (a lack of) meaning
-`ymawky` is a small, static http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, and tries to be as hardened as possible.
+ymawky is a small, static http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, and tries to be as hardened as possible.
 
-why? why not? the dream of the 80s is alive in `ymawky`. everybody has nginx. having apache makes you a square. so why not strip every single convenience layer that computer science has given us since 1957? i wanted to understand how a web server, something i knew very little about in the first place, actually works. the risks that come up, the problems that need to be solved, the things you don't think about when you're writing python or c.
+why? why not? the dream of the 80s is alive in ymawky. everybody has nginx. having apache makes you a square. so why not strip every single convenience layer that computer science has given us since 1957? i wanted to understand how a web server actually works, something i know little about coming from a low-level/systems background. the risks that come up, the problems that need to be solved, the things you don't think about when you're writing python or c.
 
 this *(probably)* won't replace nginx, but it *is* doing something in the most difficult way possible.
 
@@ -26,7 +26,7 @@ i gave myself some constraints for this project:
 
 ## assembly, my beloved
 
-assembly language is the layer between machine code and other languages. c gets compiled into assembly, which then gets assembled into an executable binary. assembly is essentially human-readable mnemonics that directly correspond to raw executable bytes: `mov`, `add`, `ldr`, `str`, `cmp`, and so on.
+assembly language is the layer between machine code and other languages. c gets compiled into assembly, which then gets assembled into an executable binary. assembly is essentially human-readable mnemonics that directly correspond to raw executable bytes: `mov`, `add`, `ldr`, `str`, `cmp`, among others. `svc #0x80` is the human-readable equivalent to the bytes `D4 00 10 01` you'll find in the executable binary.
 
 you get almost no abstractions. you move values around between cpu registers and memory, compare them, jump to different portions of your code, and call the kernel for syscalls. it makes simple things look complicated, but it also makes almost every step the cpu takes visible and under your control. it does exactly what you tell it to, without warnings, and without any help. if it's behaving incorrectly, it's because *you* wrote it incorrectly.
 
@@ -40,7 +40,7 @@ at its most basic, a web server receives a request, processes it, returns a stat
 * listen to the socket for new connections with `listen(sockfd, 5)`
 * accept a connection with `accept(sockfd, NULL, NULL)`
 
-`ymawky` is a fork-on-request server. that means for each new inbound connection, it calls the `fork()` syscall. this has some advantages:
+ymawky is a fork-on-request server. that means for each new inbound connection, it calls the `fork()` syscall. this has some advantages:
 
 * memory is not shared between request handlers
 * it's easier to understand
@@ -70,7 +70,7 @@ binding to sockets and listening is the easy part. the real soul-crushing task i
 
 ## raw syscalls
 
-`ymawky` doesn't use any libc wrappers. it just uses raw calls to the kernel. take, for example, this snippet of code that opens a file:
+ymawky doesn't use any libc wrappers. it just uses raw calls to the kernel. take, for example, this snippet of code that opens a file:
 
 ```asm
 mov x16, #5 ; SYS_open syscall number
@@ -102,7 +102,7 @@ that first line tells us a lot. it's a `GET` request, which means the client wou
 
 then there is `Range: bytes=3-5`, which means "from this file, only give me bytes 3 through 5, ignore the rest." if a file is 500gb large, but you only request bytes 3 through 5, you only receive 3 bytes back. *yay!* unfortunately for me, i have to process that header. *boo!*
 
-first, `ymawky` determines the request type by comparing the first few bytes against every method it supports, then it extracts the path.
+first, ymawky determines the request type by comparing the first few bytes against every method it supports, then it extracts the path.
 we scan along the header one byte at a time until we find a `/` or `*`. but we can't assume every `/` is the requested path. if somebody sends:
 ```http
 GET HTTP/1.0\r\n
@@ -110,7 +110,7 @@ GET HTTP/1.0\r\n
 ```
 there is a `/` in `HTTP/1.0`. once we hit a `/`, we check that the *previous* byte was a space. if it wasn't, we reply with `400 Bad Request`.
 
-once we find the path, we need somewhere to store it. on most systems, `PATH_MAX` is 4096 bytes, so `ymawky` has a 4096 byte filename buffer plus one byte for the null terminator:
+once we find the path, we need somewhere to store it. on most systems, `PATH_MAX` is 4096 bytes, so ymawky has a 4096 byte filename buffer plus one byte for the null terminator:
 ```asm
 .bss
 filename_buffer: .skip 4097
@@ -341,7 +341,7 @@ but in ymawky, the timeout handler never *needs* returns. it sends a `408 Reques
 
 apple also has a little-documented syscall, `proc_info()` (syscall #336), which allows you to get information about a running process, including its children. this is normally used by tools like `ps`, `lsof`, and `top`, but ymawky uses it to count active child processes.
 
-since `ymawky` has a configurable maximum number of connections, it needs to know how many children are alive. `proc_info()` writes child process info to a buffer. since each element has a known size, the server can determine the number of children by looking at how many bytes were written. if there are more than `MAX_PROCS`, new connections get rejected with `503 Service Unavailable`.
+since ymawky has a configurable maximum number of connections, it needs to know how many children are alive. `proc_info()` writes child process info to a buffer. since each element has a known size, the server can determine the number of children by looking at how many bytes were written. if there are more than `MAX_PROCS`, new connections get rejected with `503 Service Unavailable`.
 
 yay!
 ## conclusion
