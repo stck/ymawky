@@ -10,7 +10,7 @@ why? why not? the dream of the 80s is alive in `ymawky`. everybody has nginx. ha
 this *(probably)* won't replace nginx, but it *is* doing something in the most difficult way possible.
 
 <figure style="text-align: center;">
-  <img src="doclist.png" alt="ymawky directory listing">
+  <img src="dirlist.png" alt="ymawky directory listing">
   <figcaption><em>ymawky serving a directory listing</em></figcaption>
 </figure>
 
