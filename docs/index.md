@@ -9,7 +9,10 @@ why? why not? the dream of the 80s is alive in `ymawky`. everybody has nginx. ha
 
 this *(probably)* won't replace nginx, but it *is* doing something in the most difficult way possible.
 
-![](ymawky.png)
+<figure style="text-align: center;">
+  <img src="doclist.png" alt="ymawky directory listing">
+  <figcaption><em>ymawky serving a directory listing</em></figcaption>
+</figure>
 
 ## constraints
 i gave myself some constraints for this project:
@@ -234,8 +237,6 @@ if you `GET /somedir/`, we check if directory listing is enabled (`ALLOW_DIR_LIS
 if it is allowed, we call `getdirentries64()` (syscall #344) on the requested directory. this fills a buffer with information about every file in the directory. importantly for us, it includes the name of each file, and the length of the filename.
 
 we use that name information to build some HTML, making the directory listing clickable-and-pretty.
-![directory listing in ymawky](dirlist.png)
-
 for each file, we write this to the client:
 ```html
 <a href="filename">filename</a>
@@ -344,6 +345,9 @@ since `ymawky` has a configurable maximum number of connections, it needs to kno
 
 yay!
 ## conclusion
+<p style="text-align: center;">
+  <img src="ymawky.png" alt="ymawky">
+</p>
 everybody should write more assembly. who cares about security? who cares about ease? why write a 100 line python script when you could write 4,000 lines of assembly? why have productive days when you could spend 7 hours debugging string parsing for the 10th day in a row? *(hint: you wrote `[x3, #1]` instead of `[x3], #1`).*
 
 more seriously, the hard part of writing a static web server was not opening a socket or listening for requests. the hard part was parsing the request and handling every edge case. every request is bytes. every path is bytes. every response is bytes. every range needs to be exact. every filename has to be escaped differently.
