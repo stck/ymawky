@@ -7,6 +7,8 @@
 .global filename_str
 .global filename_len
 .global docroot_len
+.global query_str
+.global query_len
 
 .data
 file_des:     .quad -1 ; file descriptor for GET/HEAD and stuff. should be
@@ -19,4 +21,6 @@ header_len:   .skip 8
 clientfd:     .skip 8
 filename_str: .skip 8
 filename_len: .skip 8
+query_str:    .skip 8
+query_len:    .skip 8
 docroot_len:  .skip 8

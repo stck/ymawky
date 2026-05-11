@@ -26,6 +26,8 @@
 .equ filename_buf_size, 4096
 ;; (PATH_MAX + some extra bytes for tmp stuff)
 .equ filename_buf_tmp_size, filename_buf_size + 64
+;; max size for query string (everything after ? in, eg, GET /index?f=u&c=k
+.equ query_buf_size, 4096
 
 .data
 header_end: .ascii "\r\n\r\n"
@@ -61,6 +63,7 @@ filename_buf_tmp: .skip filename_buf_tmp_size + 1
 .align 3
 range_buf: .skip 19
 .align 3
+query_buf: .skip query_buf_size
 
 .text
 .align 2
@@ -583,7 +586,7 @@ parse_path:
     stp x29, x30, [sp, #-64]!
     stp x20, x21, [sp, #16]
     stp x22, x23, [sp, #32]
-    str x24, [sp, #48]
+    stp x24, x25, [sp, #48]
 
     mov x22, x1 ;; save header length in x22
     mov x20, x2 ;; save bool option in x20.
@@ -596,6 +599,7 @@ parse_path:
     cmp x22, #16 ;; make sure the header is at least 16 bytes long
     b.lo L400
 
+    mov x25, #0
     mov x23, #0
     mov x2, #1 ;; just has to be non-null, previous byte to make sure a space
                ;; precedes the '/'
@@ -676,9 +680,21 @@ Lfilename_loop:
     cmp w3, #'\n'
     b.eq Lno_match
 
+    ;; if x25 is set, that indicates that we've reached a ?. if we reached a ?,
+    ;; we want to copy the rest of the URL exactly -- don't collapse multiple
+    ;; slashes into a single slash. so just skip this block if x25 is set.
+    cbnz x25, 1f
     cmp w3, #'/'
     b.eq Lslash
     mov x24, #0 ; 0 means last char was not a slash, 1 means last char was
+1:
+
+    cmp w3, #'?' ; is it a ? ?? we'll use that for query string.
+    b.ne 1f
+    cbnz x25, 1f ; if x25 is already set, ignore it. query can have multiple ?
+    ;; set x25 to the index immediately after the ?. we don't want the literal
+    ;; first ? to appear in query_buf, so we add 1 to x4 to skip it
+    add x25, x4, #1
 1:
     ;; ok, we're not done
     strb w3, [x1, x4] ; copy byte to filename_buf+index
@@ -719,7 +735,7 @@ Lfilename_done:
     strb wzr, [x1, x4] ;; null-terminate filename_buf
     mov x0, x1 ; we want x0 to point to the filename string
     mov x1, x4 ; x1 is the length of the filename
-    b Lparse_return
+    b Lparse_end
 
 Lempty_filename:
     mov x5, x1 ; save filename_buf in x5
@@ -745,11 +761,11 @@ Lempty_filename:
     mov x2, default_file_len
     add x1, x1, x2
 
-    b Lparse_return
+    b Lparse_end
 Lno_default_file:
     mov x0, x5
     mov x1, www_prefix_len
-    b Lparse_return
+    b Lparse_end
 
 Lasterisk:
     ;; bounds check yuck
@@ -762,28 +778,62 @@ Lasterisk:
     cmp w2, #' '
     b.ne L400
 
-    ;; store * as the filename
+   ;; store * as the filename
     adr_l x0, filename_buf
     str w3, [x0]
     strb wzr, [x0, #1]
 
     ;; x0 is already set
     mov x1, #1 ; filename is just one byte
-    b Lparse_return
+    b Lparse_end
 
 ;; no match was when we were parsing the header for request type. since we cant
 ;; find a file without a /, just return NULL
 Lno_match:
     mov x0, #0
     mov x1, #0
+    mov x2, #0
+    mov x3, #0
     cmp xzr, xzr
-    b 1f
+    b Lparse_epilogue
 
-Lparse_return:
-    cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
+Lparse_end:
+    ;; set query string/len to 0 by default, but may be overwritten
+    mov x2, #0
+    mov x3, #0
+
+    cbz x25, 9f ; if x25 is NULL, just skip straight to the end
+
+    ;; otherwise, we have to extract the parse string now.
+    mov x20, x0 ; save x0
+    mov x21, x1 ; and x1
+
+    adr_l x0, filename_buf
+    adr_l x2, query_buf
 1:
+    ;; x25 is index into filename where ? appears, from earlier in parse_path
+    cmp x25, x21 ; x21 is length of filename from parse_path
+    b.hs 2f
+
+    cmp x3, query_buf_size
+    b.hs L414
+
+    ldrb w1, [x0, x25]
+    strb w1, [x2, x3]
+
+    add x25, x25, #1
+    add x3, x3, #1
+    b 1b
+
+2:
+    mov x0, x20 ; restore x0
+    mov x1, x21 ; and x1
+9:
+qsrchdone:
+    cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
+Lparse_epilogue:
     ;; restore the link register and ret
-    ldr x24, [sp, #48]
+    ldp x24, x25, [sp, #48]
     ldp x22, x23, [sp, #32]
     ldp x20, x21, [sp, #16]
     ldp x29, x30, [sp], #64

@@ -3,6 +3,11 @@
 ;; Default: www/
 #define DEFAULT_DIR "www/"
 
+;; Default directory where CGI scripts will be stored.
+;; Note that this should include the DEFAULT_DIR docroot.
+;; Default: DEFAULT_DIR + cgi-bin/
+#define CGI_DIR DEFAULT_DIR "cgi-bin/"
+
 ;; Directory to search for custom error HTML pages, so a page can be displayed
 ;; on 404 rather than just the browser's boring stuff.
 ;; Note that this needs the trailing /.

@@ -113,12 +113,13 @@ unknown_ct: .ascii "text/plain; charset=utf-8"
 ;;
 ;; returns
 ;; x0 -> 0 on success, otherwise, errno from stat64
-;; x1 -> file type
+;; w1 -> file type
 ;; x2 -> size
+;; x3 -> executable? 1 = yes, 0 = no
 stat_fd:
     sub sp, sp, #160 ; reserve stack buffer (stat requires 144 bytes, round up)
     mov x16, SYS_fstat64
-    ;; x0 is already set
+
     mov x1, sp ; stat buffer, on the stack
     svc #0x80
     b.cs Lstat_fd_failed
@@ -127,8 +128,19 @@ stat_fd:
     ; NOTE st_mode in struct stat64 is a mode_t (u16) inside the stat struct,
     ; NOTE at offset 4. if that ever changes, look here!
     ldrh w1, [sp, #4]
+
+    ;; here we check if the file is executable, so we can treat it as a CGI
+    ;; script possibly!
+    tst w1, #S_IXUSR
+    ;; cset sets x3 to 1 if the condition is TRUE, otherwise 0.
+    ;; basically, if the S_IXUSR bit is found in w1, it's 1. if not, it's 0
+    cset x3, ne
+
+    ;; w1 is unchanged from tst. so, we can use it for the file type return,
+    ;; too.
     and w1, w1, #0xF000 ; mask S_IFMT
     ldr x2, [sp, #96] ; load st_size into x2
+
     mov x0, #0
     b Lstat_fd_end
 
@@ -137,8 +149,8 @@ Lstat_fd_failed:
     ;; think it's nice to have it all zeroed out.
     mov x1, #0
     mov x2, #0
-    ; NOTE fallthrough to Lstat_end
-
+    mov x3, #0
+    ;; fallthrough
 Lstat_fd_end:
     add sp, sp, #160
     ret
@@ -150,8 +162,9 @@ Lstat_fd_end:
 ;;
 ;; returns
 ;; x0 -> 0 on success, otherwise, errno from stat64
-;; x1 -> file type
+;; w1 -> file type
 ;; x2 -> size
+;; x3 -> executable? 1 = yes, 0 = no
 stat_path:
     sub sp, sp, #160 ; reserve stack buffer (stat requires 144 bytes, round up)
     mov x16, SYS_stat64
@@ -164,6 +177,11 @@ stat_path:
     ; NOTE st_mode in struct stat64 is a mode_t (u16) inside the stat struct,
     ; NOTE at offset 4. if that ever changes, look here!
     ldrh w1, [sp, #4]
+
+    ;; same shit as before you know the deal
+    tst w1, #S_IXUSR
+    cset x3, ne
+
     and w1, w1, #0xF000 ; mask S_IFMT
     ldr x2, [sp, #96] ; load st_size into x2
     mov x0, #0
@@ -174,8 +192,8 @@ Lstat_path_failed:
     ;; think it's nice to have it all zeroed out.
     mov x1, #0
     mov x2, #0
-    ; NOTE fallthrough to Lstat_end
-
+    mov x3, #0
+    ;; fallthrough
 Lstat_path_end:
     add sp, sp, #160
     ret

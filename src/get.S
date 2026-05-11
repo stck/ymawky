@@ -79,12 +79,17 @@ get_setup:
     cbnz x0, Lhfs_err
 
     cmp w1, #S_IFREG
-    b.eq Lgs_epilogue
+    b.eq 1f
     cmp w1, #S_IFDIR
-    b.eq Lgs_epilogue
+    b.eq 1f
 
     b L403
 
+1:
+    ;; if x3 from stat_fd is set -- it's executable, so treat it as a cgi
+    ;; script.
+    ;cbnz x3, Lcgi
+    ;; fallthrough
 Lgs_epilogue:
     mov x0, x2
 
@@ -315,3 +320,5 @@ Ldir_list:
     b dir_listing
 
 Lhfs_err: b handle_fs_error
+
+;Lcgi: b cgi
