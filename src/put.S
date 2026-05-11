@@ -63,6 +63,7 @@ put:
     b.eq L400
     ;; x0 is still set
     bl stat_path
+    cbnz x3, Lcgi
     cbz x0, Ltarget_exists
 
     cmp x0, #ENOENT
@@ -379,6 +380,7 @@ Lpcl_error:
 ;; trampolines for conditional branches across files.
 Lchild_end: b child_end
 Lhfs_err: b handle_fs_error
+Lcgi: b cgi
 L201:
     mov x0, #201
     mov x1, #0

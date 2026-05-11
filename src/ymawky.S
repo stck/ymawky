@@ -68,6 +68,10 @@ delete_req:
     .ascii "DELETE "
 .equ delete_req_len, . - delete_req
 
+post_req:
+    .ascii "POST "
+.equ post_req_len, . - post_req
+
 brew_req:
     .ascii "BREW "
 .equ brew_req_len, . - brew_req
@@ -475,6 +479,15 @@ read_failed:
     cmp x0, #1
     b.eq Lput_method
 
+    ;; oohhh, could it be a POST? that's a fancy one! (and not really
+    ;; implemented yet... TODO i guess)
+    adr_l x0, buf
+    adr_l x1, post_req
+    mov x2, post_req_len
+    bl streqn
+    cmp x0, #1
+    b.eq Lpost_method
+
     ;; oh god. it's probably BREW. unfortunately, I'm a teapot, so we can't
     ;; support that method.
     adr_l x0, buf
@@ -488,24 +501,42 @@ read_failed:
     b L501
 
 Lget_method:
+    mov x0, GET_ID
+    str_l x0, request_id
+
     adr_l x0, buf
     mov x1, x23
     b get
 
 Lput_method:
+    mov x0, PUT_ID
+    str_l x0, request_id
+
     adr_l x0, buf
     mov x1, x23
     mov x2, x24
     b put
 
 Lhead_method:
+    mov x0, HEAD_ID
+    str_l x0, request_id
     b head
 
 Loptions_method:
+    mov x0, OPTIONS_ID
+    str_l x0, request_id
     b options
 
 Ldelete_method:
+    mov x0, DELETE_ID
+    str_l x0, request_id
     b delete
+
+Lpost_method:
+    mov x0, POST_ID
+    str_l x0, request_id
+    ;; TODO FIXME XXX HACK actually make post
+    b put
 
 
 child_end:

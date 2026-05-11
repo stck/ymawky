@@ -88,7 +88,7 @@ get_setup:
 1:
     ;; if x3 from stat_fd is set -- it's executable, so treat it as a cgi
     ;; script.
-    ;cbnz x3, Lcgi
+    cbnz x3, Lcgi
     ;; fallthrough
 Lgs_epilogue:
     mov x0, x2
@@ -321,4 +321,4 @@ Ldir_list:
 
 Lhfs_err: b handle_fs_error
 
-;Lcgi: b cgi
+Lcgi: b cgi

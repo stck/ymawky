@@ -127,3 +127,11 @@
 .equ RENAME_NOFOLLOW_ANY, 0x00000010
 .equ AT_SYMLINK_NOFOLLOW_ANY, 0x0800
 .equ AT_FDCWD, -2
+
+;; request type ids
+.equ GET_ID,     0
+.equ HEAD_ID,    1
+.equ OPTIONS_ID, 2
+.equ DELETE_ID,  3
+.equ PUT_ID,     4
+.equ POST_ID,    5

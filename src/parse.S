@@ -807,6 +807,9 @@ Lparse_end:
     ;; otherwise, we have to extract the parse string now.
     mov x20, x0 ; save x0
     mov x21, x1 ; and x1
+    ;; x22 points at the index that contains the ?, rather than one-past it
+    ;mov x22, x25
+    sub x22, x25, #1
 
     adr_l x0, filename_buf
     adr_l x2, query_buf
@@ -820,6 +823,7 @@ Lparse_end:
 
     ldrb w1, [x0, x25]
     strb w1, [x2, x3]
+    strb wzr, [x0, x25] ; now make that NULL in filename_str
 
     add x25, x25, #1
     add x3, x3, #1
@@ -827,11 +831,15 @@ Lparse_end:
 
 2:
     mov x0, x20 ; restore x0
-    mov x1, x21 ; and x1
+    strb wzr, [x0, x22] ; NULL the ? in filename
+    ;mov x1, x21 ; and x1
+    ;sub x1, x21, x25 ; filename length = total length - query string offset
+    mov x1, x22
 9:
 qsrchdone:
     cmn xzr, xzr ; clear carry in case. it gets set in the other error paths.
 Lparse_epilogue:
+parsebp:
     ;; restore the link register and ret
     ldp x24, x25, [sp, #48]
     ldp x22, x23, [sp, #32]
@@ -915,6 +923,7 @@ fuck:
 
     str_l x0, filename_str
     str_l x1, filename_len
+fuuck:
     bl check_path_safety
     cbz x0, L400
 
