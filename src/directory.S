@@ -1,6 +1,7 @@
 #include "defs.S"
 
 .global dir_listing
+.global write_with_chunk_length
 
 .data
 ;; This is used to build the Directory Listing html page:

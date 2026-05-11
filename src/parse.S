@@ -905,6 +905,10 @@ do_path_checks:
     bl parse_path
     b.cs L400
 
+    str_l x2, query_str
+    str_l x3, query_len
+fuck:
+
     ;; x0 is already path, x1 is already path length
     bl decode_url
     cbz x0, L400
