@@ -1,5 +1,20 @@
 #include "defs.S"
 
+
+;;; TODO TODO TODO
+;;
+;; 1. Rather than execute any executable file as a CGI script, parse the path.
+;;    if it's a request for DOCROOT/CGI_DIR, check for executability. if exec-
+;;    able, exec it as a CGI. otherwise, just serve the request.
+;; 2. Fix up code stuff
+;; 3. Parse filename_str to get file-to-execve. might need to implement some
+;;    kind of basename() function. since we cant like:
+;;      chdir("www/cgi-bin/");
+;;      execve("www/cgi-bin/epicscriptz");
+;;
+;;; TODO TODO TODO
+
+
 .global cgi
 
 .align 4
@@ -13,16 +28,8 @@ cgi_dir: .ascii DOCROOT
 ;cgi_dir: .asciz 
 
 .align 4
-argv: .quad cgi_script
+argv: .quad 0 ;cgi_script
       .quad 0
-
-body: .asciz "comment=wow+this+rocks"
-.equ body_len, . - body
-
-;rm: .asciz "REQUEST_METHOD=POST"
-;.equ rml, . - rm
-;cl: .asciz "CONTENT_LENGTH=22"
-;.equ cll, . - cl
 
 ;; constant env vars
 gateway_interface: .asciz "GATEWAY_INTERFACE=CGI/1.1"
@@ -98,6 +105,13 @@ env_var_str_buf: .skip env_var_str_buf_size
 
 .equ env_var_ptr_buf_size, 512
 env_var_ptr_buf: .skip env_var_ptr_buf_size
+
+.align 3
+.equ script_name_buf_len, 256
+script_name_buf: .skip script_name_buf_len
+.align 3
+.equ script_path_buf_len, 4096
+script_path_buf: .skip script_path_buf_len
 
 .text
 .align 2
@@ -312,6 +326,15 @@ pre_fork:
     adr_l x1, env_var_ptr_buf
     bl set_constant_env_vars
 
+    mov x28, #0x10
+    bl get_script_path_elements
+    b.cs 1f
+    mov x28, #0x100
+    b fuckk
+1:
+    mov x28, #0x1000
+fuckk:
+
     ;; SYS_pipe()
     ;; NOTE: the pipe() syscall, unlike the libc wrapper, takes no arguments
     mov x16, #SYS_pipe
@@ -427,12 +450,6 @@ Lforward_done:
     svc #0x80
     b.cs error
 2:
-    ;mov x16, SYS_write
-    ;ldr_l w0, cgi_stdin_w
-    ;adr_l x1, body
-    ;mov x2, body_len
-    ;svc #0x80
-    ;b.cs error
 
     ;; this is a boolean. have we already output a header? 0 = no, 1 = yes
     mov x19, #0
@@ -571,15 +588,14 @@ cgi_child:
     ;; we gotta chdir into the right directory
     mov x16, #12 ; SYS_chdir
     adr_l x0, cgi_dir
-bp0:
     svc #0x80
     b.cs error
 
+
     ;; FINALLY we can FUCKING EXECVE
     mov x16, SYS_execve
-    adr_l x0, cgi_script
+    ;adr_l x0, cgi_script
     adr_l x1, argv
-    ;adr_l x2, envp
     adr_l x2, env_var_ptr_buf
     svc #0x80
 
@@ -600,3 +616,78 @@ error:
     ;; x0 is already errno
     mov x16, SYS_exit
     svc #0x80
+
+get_script_path_elements:
+    stp x29, x30, [sp, #-32]!
+    stp x19, x20, [sp, #16]
+
+    ldr_l x19, filename_str
+    ldr_l x20, filename_len
+
+    ;; find the index of the last /
+    mov x0, x20
+1:
+round1:
+    cmp x0, #0
+    ;b.eq Lerror
+    ldrb w1, [x19, x0]
+    cmp w1, #'/'
+    b.eq 2f
+    sub x0, x0, #1
+    b 1b
+2:
+fuck1:
+    ;; the index of the last slash is now in x0
+    ;; add one to it so we dont copy /name_with_slash to script_name_buf, and
+    ;; instead copy path/with/slash/ to script_path_buf
+    add x0, x0, #1
+    ;; if the very last char was a /, it's a directory being requested, and
+    ;; that's no good.
+    cmp x0, x20
+    b.hs Lerror
+
+    mov x3, x0 ; and in x3 lol
+    mov x4, #0 ; offset into script_name_buf
+    adr_l x1, script_name_buf
+
+    ;; copy from / to the end of string into script_name_buf
+1:
+round2:
+    cmp x0, x20
+    b.eq 2f
+    cmp x4, script_name_buf_len
+    b.eq 2f
+    ldrb w2, [x19, x0]
+    strb w2, [x1, x4]
+    add x0, x0, #1
+    add x4, x4, #1
+    b 1b
+2:
+    mov x4, #0
+    adr_l x1, script_path_buf
+
+    ;; now we copy from the start of filename_len up to the first /, into
+    ;; script_path_buf
+1:
+    cmp x4, x3
+    b.eq 2f
+    cmp x4, script_path_buf_len
+    b.eq 2f
+    ldrb w2, [x19, x4]
+    strb w2, [x1, x4]
+    add x4, x4, #1
+    b 1b
+2:
+    b Lgspe_epilogue
+
+Lerror:
+    mov x27, #0x101
+    cmp xzr, xzr ; set carry bit
+    b 1f
+
+Lgspe_epilogue:
+    cmn xzr, xzr ; clear carry bit
+1:
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
