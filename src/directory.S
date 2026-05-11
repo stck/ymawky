@@ -2,6 +2,7 @@
 
 .global dir_listing
 .global write_with_chunk_length
+.global chunked_content_end
 
 .data
 ;; This is used to build the Directory Listing html page:
@@ -46,8 +47,8 @@ listing_tail: .ascii "</body><div class=\"footer\"><small>ymawky :: hand-rolled 
 crlf: .ascii "\r\n"
 .equ crlf_len, . - crlf
 ;; end of the message
-content_end: .ascii "0\r\n\r\n"
-.equ content_end_len, . - content_end
+chunked_content_end: .ascii "0\r\n\r\n"
+.equ chunked_content_end_len, . - chunked_content_end
 
 encoded_quote: .ascii "&quot;"
 .equ encoded_quote_len, . - encoded_quote
@@ -706,8 +707,8 @@ gde_done:
 
     ;; write 0\r\n\r\n
     ldr_l x0, clientfd
-    adr_l x1, content_end
-    mov x2, content_end_len
+    adr_l x1, chunked_content_end
+    mov x2, chunked_content_end_len
     bl write_all
 
     bl close

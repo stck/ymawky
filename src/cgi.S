@@ -59,6 +59,14 @@ content_type: .ascii "CONTENT_TYPE="
 http_host: .ascii "HTTP_HOST="
 .equ http_host_len, . - http_host
 
+cgi_header: .ascii "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\nAllow: GET, HEAD, OPTIONS, DELETE, PUT\r\nAccept-Ranges: bytes\r\nServer: ymawky\r\n"
+.equ cgi_header_len, . - cgi_header
+
+;; if the fuckin cgi script doesn't send over a header, let's just like. make
+;; sure we at least send this, and the \r\n\r\n to end the header.
+cgi_noscriptheader_end: .ascii "Content-Type: text/html; charset=utf-8; shit\r\n\r\n"
+.equ cgi_noscriptheader_end_len, . - cgi_noscriptheader_end
+
 .bss
 .align 4
 cgi_stdin_r:  .skip 4
@@ -210,21 +218,81 @@ cgi_parent:
     svc #0x80
     b.cs error
 
+
+    ;; this is a boolean. have we already output a header? 0 = no, 1 = yes
+    mov x19, #0
+Lread_loop:
     mov x16, SYS_read
     ldr_l w0, cgi_stdout_r
     adr_l x1, cgi_buf
     mov x2, cgi_buf_size
     svc #0x80
     b.cs error
+    cbz x0, Lloop_end
+
     mov x20, x0  ; save read length
 
-    mov x16, SYS_write
-    mov x0, #1
-    adr_l x1, cgi_buf
-    mov x2, x20
-    svc #0x80
-    b.cs error
+    ;; skip this bit if we've already sent a header
+    cbnz x19, Lskip_header
 
+    mov x0, #1
+    adr_l x1, cgi_header
+    mov x2, cgi_header_len
+    bl write_all
+
+    adr_l x21, cgi_buf
+    mov x0, x21
+    mov x1, x20
+    bl parse_header_end
+
+    mov x22, x1
+    cbnz x22, 1f
+
+    mov x0, #1
+    adr_l x1, cgi_noscriptheader_end
+    mov x2, cgi_noscriptheader_end_len
+    bl write_all
+    b 2f
+bp1:
+1:
+    mov x0, #1
+    mov x1, x21
+    mov x2, x22
+    bl write_all
+
+    add x21, x21, x22
+    sub x20, x20, x22
+    ;; skip past the header bytes in the response from the cgi script
+    ;add x21, x21, x22
+    ;sub x20, x20, x22
+    ;; if the CGI script only sent over a header for some reason, we gotta try
+    ;; to read again...
+    ;cmp x20, #0
+    ;b.ls Lread_loop
+
+    ;mov x0, #1
+    ;mov x1, x21
+    ;mov x2, x22 ; from parse_header_end
+    ;bl write_all
+2:
+    ; mark that we have written the header, so this loop doesn't reiterate.
+    mov x19, #1
+
+Lskip_header:
+    ;mov x16, SYS_write
+    ;mov x0, #1
+    ;adr_l x1, cgi_buf
+    ;mov x2, x20
+    ;svc #0x80
+    ;b.cs error
+    mov x0, #1
+    ;adr_l x1, cgi_buf
+    mov x1, x21
+    mov x2, x20
+    bl write_with_chunk_length
+
+
+Lloop_end:
     mov x16, SYS_wait4
     mov x0, #-1           ; any child
     adr_l x1, status      ; where to store wstatus (allocate 4 bytes in .bss)
