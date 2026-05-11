@@ -1,12 +1,12 @@
 ;; Default docroot, relative to ymawky's current working environment.
 ;; Note that this needs the trailing /.
 ;; Default: www/
-#define DEFAULT_DIR "www/"
+#define DOCROOT "www/"
 
 ;; Default directory where CGI scripts will be stored.
-;; Note that this should include the DEFAULT_DIR docroot.
-;; Default: DEFAULT_DIR + cgi-bin/
-#define CGI_DIR DEFAULT_DIR "cgi-bin/"
+;; This is inside DOCROOT.
+;; Default: cgi-bin/
+#define CGI_DIR "cgi-bin/"
 
 ;; Directory to search for custom error HTML pages, so a page can be displayed
 ;; on 404 rather than just the browser's boring stuff.

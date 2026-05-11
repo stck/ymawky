@@ -302,7 +302,7 @@ GET /etc/shadow HTTP/1.0\r\n
 
 and own the system. that's no fair! we've got to do something!
 
-first, all requested paths get a docroot prepended to them. by default, it's `www/` (`DEFAULT_DIR` in `config.S`). a request for `/etc/shadow` becomes a request for `www/etc/shadow`, which should 404 (unless you have a directory named `etc/` inside `www/`, with a file named `shadow`).
+first, all requested paths get a docroot prepended to them. by default, it's `www/` (`DOCROOT` in `config.S`). a request for `/etc/shadow` becomes a request for `www/etc/shadow`, which should 404 (unless you have a directory named `etc/` inside `www/`, with a file named `shadow`).
 
 problem solved!
 

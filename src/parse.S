@@ -43,13 +43,13 @@ bytes_match_str: .ascii "bytes"
 .equ bytes_match_len, 5
 
 
-www_prefix: .ascii DEFAULT_DIR ;; DEFAULT_DIR from config.S
+www_prefix: .ascii DOCROOT ;; DOCROOT from config.S
 .equ www_prefix_len, . - www_prefix
 
 default_file: .ascii DEFAULT_FILE ;; also from config.S
 .equ default_file_len, . - default_file
 
-tmp_prefix: .ascii DEFAULT_DIR
+tmp_prefix: .ascii DOCROOT
             .ascii ".ymawky_tmp_"
 .equ tmp_prefix_len, . - tmp_prefix
 .align 3 ;; tmp_prefix length is odd, realign for the .quad below

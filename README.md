@@ -157,10 +157,10 @@ Archive files:
 
 ## Configuration
 You can configure ymawky with the `config.S` file. The options are documented here.
-- `#define DEFAULT_DIR "www/"` -- This is the docroot. Change it to wherever your HTML files are, relative to ymawky, or use an absolute path:
-  - `#define DEFAULT_DIR "www/"`
-  - `#define DEFAULT_DIR "/Library/WebServer/Documents`
-  - `#define DEFAULT_DIR "./"`
+- `#define DOCROOT "www/"` -- This is the docroot. Change it to wherever your HTML files are, relative to ymawky, or use an absolute path:
+  - `#define DOCROOT "www/"`
+  - `#define DOCROOT "/Library/WebServer/Documents`
+  - `#define DOCROOT "./"`
 - `#default ERR_DIR "err/"` -- This is the directory in which ymawky will search for custom error HTML pages, eg, `err/404.html` or `err/500.html`
 - `#define DEFAULT_FILE "index.html"` -- This is the default file ymawky will serve when it receives an empty `GET / HTTP/1.1` request
 - `.equ RECV_TIMEOUT, 10` -- Number of seconds ymawky will wait to receive datta before closing the connection. If it's more than `RECV_TIMEOUT` seconds between `read()`s, ymawky will close the connection with `408 Request Timed Out`

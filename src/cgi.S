@@ -6,9 +6,10 @@
 
 .data
 .align 4
-cgi_script: .asciz "./logbook"
+;cgi_script: .asciz "./logbook"
 .align 4
-cgi_dir: .asciz "www/cgi-bin/"
+cgi_dir: .ascii DOCROOT
+         .ascii CGI_DIR
 ;cgi_dir: .asciz 
 
 .align 4
@@ -310,8 +311,7 @@ pre_fork:
     adr_l x0, env_var_str_buf
     adr_l x1, env_var_ptr_buf
     bl set_constant_env_vars
-    ; envp is built already, just static for now
- fuck:   
+
     ;; SYS_pipe()
     ;; NOTE: the pipe() syscall, unlike the libc wrapper, takes no arguments
     mov x16, #SYS_pipe
@@ -571,6 +571,7 @@ cgi_child:
     ;; we gotta chdir into the right directory
     mov x16, #12 ; SYS_chdir
     adr_l x0, cgi_dir
+bp0:
     svc #0x80
     b.cs error
 
