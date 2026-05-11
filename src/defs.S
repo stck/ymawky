@@ -8,9 +8,9 @@
 .endm
 
 ;; same with adrp ... (add ...) ldr ...
-.macro ldr_l reg, sym
-    adrp \reg, \sym@PAGE
-    ldr \reg, [\reg, \sym@PAGEOFF]
+.macro ldr_l reg, sym, scratch=x9
+    adrp \scratch, \sym@PAGE
+    ldr \reg, [\scratch, \sym@PAGEOFF]
 .endm
 
 ;; and adrp ... (add ...) str ...
@@ -36,9 +36,12 @@
 .equ SYS_unlink,       10
 .equ SYS_getpid,       20
 .equ SYS_accept,       30
+.equ SYS_pipe,         42
 .equ SYS_sigaction,    46
+.equ SYS_execve,       59
 .equ SYS_munmap,       73
 .equ SYS_setitimer,    83
+.equ SYS_dup2,         90
 .equ SYS_socket,       97
 .equ SYS_bind,         104
 .equ SYS_setsockopt,   105

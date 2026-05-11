@@ -4,3 +4,6 @@ ymawky
 err/*
 !err/template.html
 www/.*
+www/cgi-bin/*
+# this is just for testing, so i'll remove it once cgi is workin
+src/Makefile 
