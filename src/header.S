@@ -72,6 +72,9 @@ header_500: .ascii "HTTP/1.1 500 Internal Server Error"
 header_501: .ascii "HTTP/1.1 501 Not Implemented"
 .equ header_501_len, . - header_501
 
+header_502: .ascii "HTTP/1.1 502 Bad Gateway"
+.equ header_502_len, . - header_502
+
 header_503: .ascii "HTTP/1.1 503 Service Unavailable"
 .equ header_503_len, . - header_503
 
@@ -124,6 +127,7 @@ status_table:
     .quad 431,    header_431,  header_431_len
     .quad 500,    header_500,  header_500_len
     .quad 501,    header_501,  header_501_len
+    .quad 502,    header_502,  header_502_len
     .quad 503,    header_503,  header_503_len
     .quad 505,    header_505,  header_505_len
     .quad 507,    header_507,  header_507_len

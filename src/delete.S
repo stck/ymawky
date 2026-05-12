@@ -35,6 +35,12 @@ delete:
     cmp w1, #'*'
     b.eq L400
 
+    ;; at this point you know the drill. if it's a request within CGI_DIR,
+    ;; treat it as a CGI script.
+    bl check_cgi_path
+    b.cc Lcgi
+
+    ldr_l x0, filename_str
     bl stat_path
     cbnz x0, Ldelete_stat_failed
     cb ne, w1, #S_IFREG, L403
@@ -93,3 +99,4 @@ L500:
     mov x0, #500
     mov x1, #0
     b reply_status
+Lcgi: b cgi

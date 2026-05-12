@@ -915,7 +915,6 @@ do_path_checks:
 
     str_l x2, query_str
     str_l x3, query_len
-fuck:
 
     ;; x0 is already path, x1 is already path length
     bl decode_url
@@ -923,7 +922,7 @@ fuck:
 
     str_l x0, filename_str
     str_l x1, filename_len
-fuuck:
+
     bl check_path_safety
     cbz x0, L400
 

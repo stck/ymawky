@@ -61,9 +61,13 @@ put:
     ldrb w1, [x0]
     cmp w1, #'*'
     b.eq L400
-    ;; x0 is still set
+
+    ;; if it's a request within CGI_DIR, just assume it's a cgi script.
+    bl check_cgi_path
+    b.cc Lcgi
+
+    ldr_l x0, filename_str
     bl stat_path
-    cbnz x3, Lcgi
     cbz x0, Ltarget_exists
 
     cmp x0, #ENOENT

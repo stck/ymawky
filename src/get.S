@@ -55,7 +55,8 @@ good_response_tail:
 ;; file descriptor in file_des, which is in data.S's .data. child_end should
 ;; close it, but be aware!
 get_setup:
-    stp x29, x30, [sp, #-16]!
+    stp x29, x30, [sp, #-32]!
+    stp x19, x20, [sp, #16]
 
     mov x0, #1 ;; yes, default to index.html if no file is given
     bl do_path_checks
@@ -64,6 +65,11 @@ get_setup:
     ldrb w1, [x0]
     cmp w1, #'*'
     b.eq L400
+
+gbp:
+    ;; check if the path requested is in CGI_DIR
+    bl check_cgi_path
+    b.cc Lcgi ; branch to cgi handler if so
 
     mov x16, SYS_open
     ldr_l x0, filename_str
@@ -79,22 +85,23 @@ get_setup:
     cbnz x0, Lhfs_err
 
     cmp w1, #S_IFREG
-    b.eq 1f
+    b.eq Lgs_epilogue
     cmp w1, #S_IFDIR
-    b.eq 1f
+    b.eq Lgs_epilogue
 
     b L403
 
-1:
-    ;; if x3 from stat_fd is set -- it's executable, so treat it as a cgi
-    ;; script.
-    cbnz x3, Lcgi
-    ;; fallthrough
 Lgs_epilogue:
     mov x0, x2
 
-    ldp x29, x30, [sp], #16
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #32
     ret
+
+Lcgi:
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #32
+    b cgi
 
 
 ;; for HEAD, reply with just the header. pretty short n sweet.
@@ -320,5 +327,3 @@ Ldir_list:
     b dir_listing
 
 Lhfs_err: b handle_fs_error
-
-Lcgi: b cgi
