@@ -110,7 +110,7 @@ header_end_lflf: .ascii "\n\n"
 .equ header_end_lflf_len, . - header_end_lflf
 
 ;; Header fields from the CGI script to not forward in our response
-;; we check with streqn_i, 
+;; we check with streqn_i,
 cgiscr_status: .ascii "status:"
 .equ cgiscr_status_len, . - cgiscr_status
 
@@ -640,8 +640,8 @@ pre_fork:
     ;; sorry :(
     cmp w1, #S_IFREG
     b.ne L403
-    
-    ;; x3 is a boolean, is file executable? 0 means no. file isn't executable, 
+
+    ;; x3 is a boolean, is file executable? 0 means no. file isn't executable,
     ;; that's a problem on the servers end. why the HELL do you have
     ;; nonexecutable files in the CGI script directory, huh?! go fix that.
     cbz x3, L500
@@ -705,7 +705,7 @@ about_to_fork:
     b.eq cgi_child
     ;; if not, then we're the...
 cgi_parent:
-   str_l x0, child_pid ; store the pid of the child process XXX
+    str_l x0, child_pid ; store the pid of the child process XXX
     ;; we can close() the unused fds
     ;; close stdin_r
     mov x16, SYS_close
@@ -738,10 +738,21 @@ cgi_parent:
     adr_l x0, buf
     ldr_l x1, header_len
     bl parse_content_length
-    b.cs Lforward_done ; if there's no content length, we can just skip this
-                       ; whole bit!
+    b.cc 2f ; if there is content-length, just continue and skip the next check
 
+    ;; if we're here, there's no content length. that's fine for POST. ymawky
+    ;; requires content length for PUT, however, so let's check that.
+    ldr_l x0, request_id
+    cb eq, x0, #PUT_ID, L411 ; 411 if it's a PUT request
+    cb eq, x0, #POST_ID, Lforward_done ; just skip this bit if it's post
 
+    ;; we genuinely should never be here, request_id should be only PUT_ID or
+    ;; POST_ID, based on our check ~25 lines up. but you know what they say
+    ;; when you assume? you make an Ass out of U and Me. don't make an ass out
+    ;; of me. let's just 500 if we're in this supposedly unreachable code.
+    b L500
+
+2:
     ldr_l x1, header_len
     mov x2, x20
     ;; x0 = Content-Length header field
@@ -1304,7 +1315,7 @@ fhfs_found_nl:
     ;; compute content length
     sub x23, x19, x22
     ;; line length shouldn't possibly be 0, so something mustve gone horribly
-    ;; wrong. bail. 
+    ;; wrong. bail.
     cbz x23, fhfs_malformed
 
     ;; strip trailing \r if present
@@ -1467,10 +1478,24 @@ Lgspe_epilogue:
     ldp x29, x30, [sp], #32
     ret
 
-Lcgi_sigalrm_handler:
+;; if we branch to L40... whatever *after* the CGI script is already execve'd,
+;; we want to terminate it.
+kill_kid:
+    ldr_l x1, child_pid
+    cbz x1, 1f ; if child_pid is 0, it hasn't set yet. skip the kill. we don't
+               ; want to kill PID 0, since that would kill ymawky. lol
+
+    mov x16, SYS_close
+    ldr_l w0, cgi_stdout_r
+    svc #0x80
+
+    mov x16, SYS_close
+    ldr_l w0, cgi_stdin_w
+    svc #0x80
+
     mov x16, SYS_kill
     ldr_l x0, child_pid
-    mov x1, #9 ; murder that kid
+    mov x1, #15 ; SIGTERM the child
     svc #0x80
 
     mov x16, SYS_wait4
@@ -1479,6 +1504,11 @@ Lcgi_sigalrm_handler:
     mov x2, #0
     mov x3, #0
     svc #0x80
+1:
+    ret
+
+Lcgi_sigalrm_handler:
+    bl kill_kid
 
     mov x0, #408
     mov x1, #0
@@ -1486,18 +1516,27 @@ Lcgi_sigalrm_handler:
 
 Lhfs_error: b handle_fs_error
 L400:
+    bl kill_kid
     mov x0, #400
     mov x1, #0
     b reply_status
 L403:
+    bl kill_kid
     mov x0, #403
     mov x1, #0
     b reply_status
+L411:
+    bl kill_kid
+    mov x0, #411
+    mov x1, #0
+    b reply_status
 L500:
+    bl kill_kid
     mov x0, #500
     mov x1, #0
     b reply_status
 L502:
+    bl kill_kid
     mov x0, #502
     mov x1, #0
     b reply_status
