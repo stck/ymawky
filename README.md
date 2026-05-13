@@ -25,7 +25,7 @@ Unfortunately, while custom ports are supported, custom addresses are not. as of
 To see ymawky in action, start running ymawky with `./ymawky [port]`. Then open your web browser of choice (or use curl), and visit `127.0.0.1:8080/` or `127.0.0.1:8080/pretty/index.html`. Bask in the warmth of assembly.
 
 ## What can it do?
-ymawky is a ~~static-file~~ dynamic web server. It ~~doesn't~~ **does** support server-side code to generate content on-the-fly, and more advanced URL parsing such as `/search?query=term`, through CGI scripts. That's not to say it's non-functional, though.
+ymawky is a ~~static-file~~ dynamic web server. It ~~doesn't~~ **does** support server-side code to generate content on-the-fly, and more advanced URL parsing such as `/search?query=term`, through CGI scripts.
 - Supported HTTP methods:
     - GET
     - PUT
@@ -52,7 +52,7 @@ ymawky is a ~~static-file~~ dynamic web server. It ~~doesn't~~ **does** support 
 - If the requested resource is a directory, list all files and subdirs in the directory. Note that this excludes www/ (or whatever your docroot is): GET / will always search for index.html if no file is given.
 - CGI script support. All CGI scripts must be located within `CGI_DIR` (defined in `config.S`, default to `(docroot)/cgi-bin/`).
   - Query strings (`/cgi-bin/ratbook?q=do+you+like+rats&a=yes!`) are supported
-  - ymawky parses the CGI script's headers and forwards them to it's client response
+  - ymawky parses the CGI script's headers and forwards them to the client response
   - Enforces some minimal CGI compliance: all CGI scripts must begin their response with a header, if the response has a body as well, the header must contain a Content-Length field.
   - HTTP response code is determined by the CGI script's Status: header field, so scripts can send their own 404 or 500 or what have you. If no Status is provided, a default of `200 OK` is used.
 
@@ -66,7 +66,7 @@ This is a web server written entirely by-hand in ARM64 assembly as a fun project
 - PUT writes to a temporary file, `www/.ymawky_tmp_<pid>`. Upon successfully receiving the whole file, this temporary file is then renamed to the requested filename. This prevents partial or corrupted PUT requests from overwriting existing files.
 - Reject any requests whose path starts with `www/.ymawky_tmp_`. This prevents someone from `GET`ing a temporary file, and prevents someone from sending `PUT /.ymawky_tmp_4533` or something.
 - Must receive data within 10 seconds. If it's slower, the connection will close. If the entire header is not received within 10 seconds total, the connection will be closed. This is to prevent slowloris-like attacks.
-- CGI script support limited to the (configurable) `cgi-bin/` directory. Any request sent through `cgi-bin` gets treated the same, so you can't PUT a file with a destination inside `cgi-bin`.
+- CGI script support limited to the (configurable) `cgi-bin/` directory. Any request sent through `cgi-bin` gets treated the same, so you can't PUT a file with a destination inside `cgi-bin`, it just gets executed as a CGI script (if it exists).
 - Please note that CGI script support is currently *experimental*, and doesn't have the same strict timeout settings as PUT does. A CGI script could theoretically loop forever, read input forever, hang somewhere forever, and ymawky will not kill the script. You shouldn't run ymawky on a real server (lol), but if you *have* to, remove the `www/cgi-bin/` directory, and don't allow CGI support.
 
 ## CGI Script Support
@@ -74,12 +74,13 @@ CGI, or Common Gateway Interface, is an interface specification that enables web
 
 ymawky supports query strings: everything after the `?` in URLs. So if you have a CGI script called `logbook`, you could send a request for `/cgi-bin/logbook?q=nice+job`, and ymawky will execute logbook with the `QUERY_STRING` environmental variable set to `q=nice+job`.
 
-# Limitations
+# CGI Limitations
 CGI support in ymawky is limited. ymawky does not support `PATH_INFO`; in a request like `/blog/2024/01`, `blog` could be the executable path and `/2024/01` is passed in the `PATH_INFO` environmental variable. ymawky just treats every path as being a literal path, it would look for the file `/blog/2024/01`.
 
-# Security note
-CGI scripts can have their own vulnerabilities, since they're full programs on their own. They need to do their own error handling, input parsing, etc. What ymawky does is simple (in a manner of speaking): find the executable file, fork, set some environmental variables, execute the CGI script, and write HTTP content between the user and the CGI script.
-ymawky currently does not have a timeout set on CGI scripts, so an infinitely hanging script can hog resources, leave a connection open, or leave zombie children if the connection closes.
+# CGI Security note
+CGI scripts can have their own vulnerabilities, since they're full programs on their own. They need to do their own error handling, input parsing, etc. What ymawky does is simple (in a manner of speaking): find the executable file, set some environmental variables, fork, execute the CGI script, and write HTTP content between the user and the CGI script.
+
+ymawky currently does not have a timeout set for CGI scripts, so an infinitely hanging script can hog resources, leave a connection open, or leave zombie children if the connection closes.
 
 ## HTTP Status Codes
 ymawky currently supports and can reply with the following status codes:
