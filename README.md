@@ -80,8 +80,6 @@ CGI support in ymawky is limited. ymawky does not support `PATH_INFO`; in a requ
 # CGI Security note
 CGI scripts can have their own vulnerabilities, since they're full programs on their own. They need to do their own error handling, input parsing, etc. What ymawky does is simple (in a manner of speaking): find the executable file, set some environmental variables, fork, execute the CGI script, and write HTTP content between the user and the CGI script.
 
-ymawky currently does not have a timeout set for CGI scripts, so an infinitely hanging script can hog resources, leave a connection open, or leave zombie children if the connection closes.
-
 ## HTTP Status Codes
 ymawky currently supports and can reply with the following status codes:
 - `200 OK`

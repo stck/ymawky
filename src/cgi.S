@@ -1,11 +1,22 @@
 #include "defs.S"
 
+;; this file is ugly and long as fuck. TODO: clean it up, split into multiple
+;; different files.
+
 .global cgi
 .global check_cgi_path
 
-.align 4
-
 .data
+.align 3
+cgi_read_timer:
+    .quad 0
+    .long 0
+    .long 0
+
+    .quad 0
+    .long 0
+    .long 0
+
 .align 4
 cgi_dir: .ascii DOCROOT
          .ascii CGI_DIR
@@ -117,6 +128,7 @@ peer_addr_len:.quad 16
 
 .bss
 .align 4
+child_pid:    .skip 8
 peer_addr:    .skip 16
 cgi_stdin_r:  .skip 4
 cgi_stdin_w:  .skip 4
@@ -693,6 +705,7 @@ about_to_fork:
     b.eq cgi_child
     ;; if not, then we're the...
 cgi_parent:
+   str_l x0, child_pid ; store the pid of the child process XXX
     ;; we can close() the unused fds
     ;; close stdin_r
     mov x16, SYS_close
@@ -728,6 +741,7 @@ cgi_parent:
     b.cs Lforward_done ; if there's no content length, we can just skip this
                        ; whole bit!
 
+
     ldr_l x1, header_len
     mov x2, x20
     ;; x0 = Content-Length header field
@@ -738,6 +752,41 @@ cgi_parent:
 
     cmp x24, x23
     csel x24, x23, x24, hi ; if x24 > x23, x24 = x23
+
+    ;; we're gonna set up a PUT-like sigalarm handler for slowloris-like attack
+    ;; mitigation for CGI scripts. note that this only detects reads from the
+    ;; client to the server -- it won't catch hangs in the CGI scripts
+    ;; themselves.
+    ;; setup sigalarm handler
+    adr_l x0, Lcgi_sigalrm_handler
+    sub sp, sp, #32
+    str x0, [sp, #0]
+    str x0, [sp, #8]
+    str wzr, [sp, #16]
+    str wzr, [sp, #20]
+    mov x16, SYS_sigaction
+    mov w0, #SIGALRM
+    mov x1, sp
+    mov x2, #0
+    svc #0x80
+    add sp, sp, #32
+    b.cs L500
+
+    ;; gonna calculate it the same way as PUT.
+    mov x1, #PUT_MIN_BPS
+    udiv x2, x23, x1
+    add x2, x2, #PUT_GRACE_SECS
+
+    adr_l x0, cgi_read_timer
+    str x2, [x0, #16]
+
+    ;; set the actual timer
+    mov x16, SYS_setitimer
+    mov x0, #0
+    adr_l x1, cgi_read_timer
+    mov x2, #0
+    svc #0x80
+    b.cs L500
 
     ;; nothing in buf, so skip to the loop
     cbz x24, Lforward_loop
@@ -753,7 +802,8 @@ cgi_parent:
 Lforward_loop:
     ;; remaining = content_length - bytes_so_far
     sub x25, x23, x24
-    cbz x25, Lforward_done ; nothin more to forward!
+    ;cbz x25, Lcgi_read_zero ; nothin more to forward!
+    cbz x25, Lforward_done
 
     ;; read min(remaining, cgi_buf_size) bytes from clientfd
     mov x16, SYS_read
@@ -763,6 +813,8 @@ Lforward_loop:
     cmp x2, x25
     csel x2, x2, x25, lo
     svc #0x80
+    b.cs Lforward_read_failed
+    ;b.cs Lread_failed
     b.cs Lhfs_error
     cbz x0, Lerror ; client closed? before sending full body? dumb. error.
     mov x26, x0 ; x26 = bytes just read
@@ -777,6 +829,20 @@ Lforward_loop:
     add x24, x24, x26
     b Lforward_loop
 
+Lforward_read_failed:
+    cmp x0, #EINTR
+    b.eq Lforward_loop
+    b Lerror
+
+Lcgi_read_zero:
+    ;; disarm the timer
+    mov x16, SYS_setitimer
+    mov x0, #0
+    adr_l x1, cgi_read_timer
+    str xzr, [x1, #16]
+    mov x2, #0
+    svc #0x80
+    ;; fallthrough
 Lforward_done:
     ;; close cgi_stdin_w to signal EOF
     mov x16, SYS_close
@@ -1400,6 +1466,23 @@ Lgspe_epilogue:
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #32
     ret
+
+Lcgi_sigalrm_handler:
+    mov x16, SYS_kill
+    ldr_l x0, child_pid
+    mov x1, #9 ; murder that kid
+    svc #0x80
+
+    mov x16, SYS_wait4
+    mov x0, #-1
+    adr_l x1, status
+    mov x2, #0
+    mov x3, #0
+    svc #0x80
+
+    mov x0, #408
+    mov x1, #0
+    b reply_status
 
 Lhfs_error: b handle_fs_error
 L400:

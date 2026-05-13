@@ -37,6 +37,7 @@
 .equ SYS_getpid,       20
 .equ SYS_accept,       30
 .equ SYS_getpeername,  31
+.equ SYS_kill,         37
 .equ SYS_pipe,         42
 .equ SYS_sigaction,    46
 .equ SYS_execve,       59

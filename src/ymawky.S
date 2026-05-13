@@ -195,9 +195,6 @@ skip_argv:
     mov x2, ymawky_connected_len
     svc #0x80
 
-    ;; debug flag check. skip past the fork stuff in x28 is set
-    cbnz x28, loop
-
     ;; set up SIG_IGN on SIGCHLD, with SA_NOCLDWAIT to tell the kernel to auto
     ;; reap children. previously zombies were piling up :(
     sub sp, sp, #32
@@ -214,7 +211,23 @@ skip_argv:
     mov x2, #0 ; old action = NULL
     svc #0x80
     add sp, sp, #32
-    b.cs L500
+    b.cs exit
+
+    ;; ignore SIGPIPE so write() returns EPIPE instead of killing us
+    sub sp, sp, #32
+    mov x0, #SIG_IGN
+    str x0, [sp, #0] ; sa_handler = SIG_IGN
+    str x0, [sp, #8] ; sa_tramp = SIG_IGN
+    str wzr, [sp, #16] ; sa_mask = 0
+    str wzr, [sp, #20] ; sa_flags = 0
+
+    mov x16, SYS_sigaction
+    mov w0, #13 ;#SIGPIPE
+    mov x1, sp
+    mov x2, #0
+    svc #0x80
+    add sp, sp, #32
+    b.cs exit
 
 loop:
     ;; accept(sockfd, NULL, NULL)
