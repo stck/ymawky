@@ -3,9 +3,9 @@ layout: default
 title: ymawky
 ---
 # building a web server in aarch64 assembly to give my life (a lack of) meaning
-ymawky is a small, static http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, and tries to be as hardened as possible.
+ymawky is a small, ~~static~~ dynamic http web server written entirely in aarch64 assembly for macos. it uses raw darwin syscalls with *no* libc wrappers, serves static files, supports `GET`, `HEAD`, `PUT`, `OPTIONS`, `DELETE`, byte ranges, directory listing, custom error pages, CGI scripts, and tries to be as hardened as possible.
 
-why? why not? the dream of the 80s is alive in ymawky. everybody has nginx. having apache makes you a square. so why not strip every single convenience layer that computer science has given us since 1957? i wanted to understand how a web server actually works, something i know little about coming from a low-level/systems background. the risks that come up, the problems that need to be solved, the things you don't think about when you're writing python or c.
+why? why not? the dream of the 80s is alive in ymawky. everybody has nginx. having apache makes you a square. so why not strip every single layer of convenience that computer science has given us since 1957? i wanted to understand how a web server actually works, something i know little about coming from a low-level/systems background. the risks that come up, the problems that need to be solved, the things you don't think about when you're writing python or c.
 
 this *(probably)* won't replace nginx, but it *is* doing something in the most difficult way possible.
 
@@ -20,7 +20,6 @@ i gave myself some constraints for this project:
 * aarch64 assembly only
 * macos/darwin, not linux. only because that's the system i have right now. sorry linuxheads :(
 * raw syscalls only: **no** libc wrappers
-* static files only
 * no preexisting parsers
 * absolutely **no** external libraries
 
@@ -76,7 +75,7 @@ but it also has some pretty significant disadvantages:
 * did i mention the bloat? and memory consumption?
 
 binding to sockets and listening is the easy part. the real soul-crushing task is processing requests. a lot goes into this:
-* determining request type: `GET`, `HEAD`, `OPTIONS`, `PUT`, or `DELETE`
+* determining request type: `GET`, `HEAD`, `OPTIONS`, `PUT`, `POST`, or `DELETE`
 * extracting the requested path
 * normalizing the path, like decoding `%20` into a space
 * performing safety checks on the path
@@ -332,6 +331,46 @@ but wait! what about symlinks?
 
 of course, if someone can plant a specific symlink inside your docroot, odds are something has already gone pretty wrong. but still, can't hurt.
 
+## CGI Script Support
+
+<figure style="text-align: center;">
+  <img src="cgienv.png" alt="ymawky showing off all environmental variables from a CGI script">
+  <figcaption><em>ymawky displaying a dynamically-generated page via CGI script</em></figcaption>
+</figure>
+
+ymawky now has added support for dynamic, server-side scripting through CGI scripts, or [Common Gateway Interface](https://en.wikipedia.org/wiki/Common_Gateway_Interface). it's no longer just a static file web server! eagle-eyed readers might notice that previously, i called ymawky a static file server, or that "only serving static files" was a *constraint* i gave myself on purpose. at first it was, i didn't have any desire to add dynamic content. but as this project has grown, so too have my goals for it. the main reason i made it static file *only* was because it seemed *much* too complicated to add support for CGI. but this project would be nothing if not complicated-for-the-sake-of-being-complicated, so i've added support for CGI scripts.
+
+these are executable programs or scripts that live on the server. when a request is sent to a CGI script, rather than going through the normal `GET`/`PUT`/etc method handler, the server forks and executes the script using `execve()` (syscall #59), and forwards the request to be handled by the script. to do this, ymawky needs to set environmental variables that give the script some context. things like who sent the request, what type of request, content length/type (for `PUT` and `POST` requests), remote client's IP address, server's IP address and port, query string, among others. this introduced a lot of new problems to solve.
+
+### environmental variables
+`execve()` lets you pass environmental variables as an array of pointers to strings. assembly doesn't have data types like that, so we need to build an array of pointers. but the pointers need to actually *point* to some part of memory, so we need to store those strings somewhere. we can do this by allocating some space in memory:
+```asm
+.bss
+env_var_string_buffer:  .skip 4096
+env_var_pointer_buffer: .skip 512
+```
+this creates two chunks in memory, one 4096 bytes large, the other 512 bytes large. we use our homebrew `memcpy` to copy whatever text we'd like into `env_var_string_buffer`, followed by a NULL character. after copying, the buffer looks something like this, where `*` represents a NULL character:
+```
+GATEWAY_INTERFACE=CGI/1.1*SERVER_PROTOCOL=HTTP/1.1*SERVER_SOFTWARE=ymawky*
+```
+as we're building this buffer, we also have to set up the pointers to the start of each string. `env_var_pointer_buffer` is tightly packed, containing a pointer to the beginning of each string:
+```
+GATEWAY_INTERFACE=CGI/1.1*SERVER_PROTOCOL=HTTP/1.1*SERVER_SOFTWARE=ymawky*
+^                         ^                        ^
+0x0000000100009ff4        0x000000010000a00e       0x000000010000a027
+```
+each pointer is 8 bytes long, so if somehow we used up all 4096 bytes of `env_var_string_buffer`, we could have a corresponding pointer to the start of each string. now we can pass `env_var_pointer_buffer` to `execve()`, it will set our environmental variables, and the script can access them via `$GATEWAY_INTERFACE` (or however the scripting language used accesses any environmental variable).
+
+### communication with CGI script
+CGI scripts put their output directly to `stdout`, and read directly from `stdin`. so we have to create some pipes, using the syscalls `pipe()` (syscall #42) to create them, and `dup2()` (syscall #90) to map them to stdout/stdin. now the parent can write to the script's `stdin`, and read from the script's `stdout` to be forwarded `stdout` to the HTTP client. much like the general `PUT` handler, CGI scripts that called with the `PUT` or `POST` methods have the same dynamically calculated timeout based on content length to prevent slowloris-like attacks.
+
+### parsing CGI headers
+CGI scripts send headers just like HTTP itself, but with some differences. this allows the script to set their own response code (`200 OK`, `404 Not Found`, etc) and other headers (`Content-Type:`, `Content-Length:`). since the parent process has no way of knowing what the script is going to output, we have to use these in our response header. but CGI headers are more lenient than HTTP headers: in an HTTP header, all lines must end in `\r\n`, and the header itself must end in `\r\n\r\n`. CGI scripts are allowed to have each line in the header end with a single `\n`, and the header as a whole may end in `\n\n` (`\r\n` and `\r\n\r\n` are also acceptable, however). so we have to write a whole host of new parsing functions to deal with CGI headers, as the main parsing functions only deal with HTTP.
+
+once we reach the end of the CGI script's headers, we output them to the client literally. we have to skip the `Status:` header, though, since that gets converted to the first line of our response, eg, `HTTP/1.1 200 OK\r\n`. we also need to strip the `Connection:` header, ymawky always sends `Connection: close` and doesn't support keep-alive (yet...?).
+
+### limitations
+CGI scripts are their own programs. ymawky has no control over what they do. we [cant detect if they're in an infinite loop](https://en.wikipedia.org/wiki/Halting_problem), if they're reading data from outside of the docroot, or anything else. so a CGI script could hang forever, and we can't really do anything about it. they can also have their own vulnerabilities; that's outside of our control.
 
 ## apple-specific behavior
 
@@ -346,7 +385,17 @@ apple also has a little-documented syscall, `proc_info()` (syscall #336), which 
 since ymawky has a configurable maximum number of connections, it needs to know how many children are alive. `proc_info()` writes child process info to a buffer. since each element has a known size, the server can determine the number of children by looking at how many bytes were written. if there are more than `MAX_PROCS`, new connections get rejected with `503 Service Unavailable`.
 
 yay!
-## conclusion
+
+## ai disclosure
+this project is hand-written. it was a learning process for myself to understand both web servers and assembly. i would be doing myself a disservice if i simply vibe-coded it or copy/pasted from an ai after prompting it *"cool, now give it DELETE support"*. all of the assembly in here is written by hand, after many real human hours of toiling in vim and lldb.
+
+that being said, i did turn to ai at some points during the development of ymawky. unfortunately it's almost unavoidable, since every time you google something, google gives you that awful little ai overview. i mainly used it for understanding the http/cgi spec: header formatting, requirements for different methods, what should result in errors vs get silently ignored. it was also used sparingly to help me find bugs that i had been unable to figure out.
+
+but, the only ai-generated code in this repository is html. i'm sorry, but i genuinely do not care about front-end web development at all, really, and know next to no html/css/javascript. i just want pages to look nice, so i tweaked the resulting html pages to my liking.
+
+tl;dr: all of the assembly is artisenal, hand-crafted, human assembly. some of the content is www/ is the work of dirty, dirty robots.
+
+# conclusion
 <p style="text-align: center;">
   <img src="ymawky.png" alt="ymawky">
 </p>
@@ -354,4 +403,7 @@ everybody should write more assembly. who cares about security? who cares about 
 
 more seriously, the hard part of writing a static web server was not opening a socket or listening for requests. the hard part was parsing the request and handling every edge case. every request is bytes. every path is bytes. every response is bytes. every range needs to be exact. every filename has to be escaped differently.
 
-assembly makes you do *everything* by hand. isn't that great?
+my [hacker news post](https://news.ycombinator.com/item?id=48080587) also sparked a lot of interesting discussion. a lot of people were focused on ai and its relationship to programming. this isn't an ai project, it never was, and never will be. what would even be the point of this if i just generated it? the goal isn't to have *a* web server that's written in assembly, the goal is to *write* one. by hand, as a human person. to get down to the metal on the machine and control *everything* just because i can.
+
+i think *people* need to write more assembly. not *have assembly written for them by an llm*. 
+assembly makes *you* do *everything* by hand. isn't that great?
