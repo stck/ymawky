@@ -240,9 +240,6 @@ Lport:
     ;;fallthrough to Lip. x24 now contains bytes written into port buffer
 
     add x19, x19, #2 ; offset for sin_addr in addr struct (+4 total, +2+2)
-    ;adr_l x20, remote_addr_str_buf
-    ;mov x20, x2
-    ;mov x20, x24
     mov x20, x23
     mov x21, #0
     mov x22, #0
@@ -645,6 +642,7 @@ pre_fork:
     svc #0x80
     b.cs L500
 
+    ;; get remote connection IP address/port, needed for REMOTE_ADDR/REMOTE_HOST
     adr_l x0, peer_addr
     adr_l x1, remote_addr_port_buf
     adr_l x2, remote_addr_ip_buf
@@ -652,6 +650,7 @@ pre_fork:
     str_l x0, remote_addr_port_len
     str_l x1, remote_addr_ip_len
 
+    ;; get server's IP address/port, which is needed for SERVER_NAME/SERVER_PORT
     adr_l x0, addr
     adr_l x1, server_addr_port_buf
     adr_l x2, server_addr_ip_buf
@@ -659,12 +658,13 @@ pre_fork:
     str_l x0, server_addr_port_len
     str_l x1, server_addr_ip_len
 
+    ;; populate query_string and script_name variables
     bl get_script_path_elements
     b.cs L500
-
-    adr_l x0, script_name_buf
+    adr_l x0, script_name_buf ; save em
     str_l x0, argv
 
+    ;; set env variables...
     adr_l x0, env_var_str_buf
     adr_l x1, env_var_ptr_buf
     bl set_constant_env_vars
@@ -968,7 +968,7 @@ cgi_child:
     svc #0x80
     b.cs Lchild_error
 
-    ;; duplicate the filedescriptors to be actually stdin/out
+    ;; duplicate the file descriptors to be actually stdin/out
     mov x16, SYS_dup2
     ldr_l w0, cgi_stdin_r ; pipe fd
     mov x1, #0 ; stdin
@@ -1009,7 +1009,6 @@ cgi_child:
     ;; execve() is supposed to replace this child process with that one. if we
     ;; return here after execve, something has gone horribly wrong... so just
     ;; consider it an error
-    mov x0, #99
     b Lchild_error
 
 Lchild_error:
@@ -1403,6 +1402,10 @@ Lgspe_epilogue:
     ret
 
 Lhfs_error: b handle_fs_error
+L400:
+    mov x0, #400
+    mov x1, #0
+    b reply_status
 L403:
     mov x0, #403
     mov x1, #0
