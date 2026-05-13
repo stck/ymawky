@@ -1,20 +1,5 @@
 #include "defs.S"
 
-
-;;; TODO TODO TODO
-;;
-;; 1. Rather than execute any executable file as a CGI script, parse the path.
-;;    if it's a request for DOCROOT/CGI_DIR, check for executability. if exec-
-;;    able, exec it as a CGI. otherwise, just serve the request.
-;; 2. Fix up code stuff
-;; 3. Parse filename_str to get file-to-execve. might need to implement some
-;;    kind of basename() function. since we cant like:
-;;      chdir("www/cgi-bin/");
-;;      execve("www/cgi-bin/epicscriptz");
-;;
-;;; TODO TODO TODO
-
-
 .global cgi
 .global check_cgi_path
 
@@ -63,6 +48,12 @@ put_str:     .ascii "PUT"
 .equ put_len,     . - put_str
 post_str:    .ascii "POST"
 .equ post_len,    . - post_str
+
+remote_addr: .ascii "REMOTE_ADDR="
+.equ remote_addr_len, . - remote_addr
+
+remote_host: .ascii "REMOTE_HOST="
+.equ remote_host_len, . - remote_host
 
 script_name: .ascii "SCRIPT_NAME="
 .equ script_name_len, . - script_name
@@ -123,9 +114,12 @@ cgiscr_conn: .ascii "connection:"
 cgiscr_content_type: .ascii "content-type:"
 .equ cgiscr_content_type_len, . - cgiscr_content_type
 
+.align 2
+peer_addr_len:.quad 16
 
 .bss
 .align 4
+peer_addr:    .skip 16
 cgi_stdin_r:  .skip 4
 cgi_stdin_w:  .skip 4
 cgi_stdout_r: .skip 4
@@ -133,6 +127,8 @@ cgi_stdout_w: .skip 4
 status: .skip 4
 .equ cgi_buf_size, BUF_SIZE
 cgi_buf: .skip cgi_buf_size
+
+remote_addr_str_buf: .skip 16
 
 .equ env_var_str_buf_size, 4096
 env_var_str_buf: .skip env_var_str_buf_size
@@ -196,6 +192,58 @@ Lccp_epilogue:
 
 
 .align 2
+get_remote_addr:
+    stp x29, x30, [sp, #-48]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+
+    adr_l x19, peer_addr
+    add x19, x19, #4 ; offset for sin_addr in peer_addr
+    adr_l x20, remote_addr_str_buf
+    mov x21, #0
+    mov x22, #0
+
+Loctet:
+    cmp x22, #4
+    b.hs Ldone
+
+    ldrb w0, [x19, x22]
+    bl itoa
+    ;; x0 -> ptr, x1 -> len
+
+    ;; copy x1 bytes into remote_addr_str_buf + offset
+    mov x2, #0
+1:
+    cmp x2, x1
+    b.hs 2f
+    ldrb w3, [x0, x2]
+    strb w3, [x20, x21]
+    add x21, x21, #1
+    add x2, x2, #1
+    b 1b
+2:
+    ;; append a '.' if it's not the last octet
+    add x22, x22, #1
+    cmp x22, #4
+    b.hs Ldone
+
+    mov w3, #'.'
+    strb w3, [x20, x21]
+    add x21, x21, #1
+    b Loctet
+
+Ldone:
+    strb wzr, [x20, x21] ; null terminate
+
+    mov x0, x21 ; return number of bytes written
+
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    ret
+
+
+.align 2
 ;; set the environmental vars used for CGI scripts
 ;; input
 ;; x0 -> env_var_str_buf
@@ -204,10 +252,11 @@ Lccp_epilogue:
 ;; output
 ;; nothing -- modifies env_var_[str/ptr]_buf
 set_constant_env_vars:
-    stp x29, x30, [sp, #-64]!
+    stp x29, x30, [sp, #-80]!
     stp x19, x20, [sp, #16]
     stp x21, x22, [sp, #32]
     stp x23, x24, [sp, #48]
+    stp x25, x26, [sp, #64]
 
     mov x19, x0 ; string buffer
     mov x20, x1 ; pointer buffer
@@ -246,6 +295,29 @@ set_constant_env_vars:
     mov x2, path_info_len
     bl scev_add_const_var
     b.cs scev_failure
+
+    ;; REMOTE_ADDR=remote_addr_str_buf
+    mov x25, x0 ; gotta save current pointer
+    bl get_remote_addr
+    mov x26, x0 ; save the length from get_remote_addr too
+
+    mov x0, x26
+    adr_l x1, remote_addr
+    mov x2, remote_addr_len
+    adr_l x3, remote_addr_str_buf
+    mov x4, x26
+    adr_l x1, remote_addr
+    mov x2, remote_addr_len
+    adr_l x3, remote_addr_str_buf
+    mov x0, x25
+    bl scev_add_kv_var
+
+    ;; REMOTE_HOST=remote_addr_str_buf
+    adr_l x1, remote_host
+    mov x2, remote_host_len
+    adr_l x3, remote_addr_str_buf
+    mov x4, x26 ; saved from the get_remote_addr call
+    bl scev_add_kv_var
 
     ;; QUERY_STRING=query_str
     adr_l x1, query_string
@@ -339,10 +411,11 @@ scev_failure:
 scev_epilogue:
     cmn xzr, xzr
 1:
+    ldp x25, x26, [sp, #64]
     ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #64
+    ldp x29, x30, [sp], #80
     ret
 
 ;; x0 -> destination for memcpy
@@ -447,6 +520,14 @@ pre_fork:
     ;; that's a problem on the servers end. why the HELL do you have
     ;; nonexecutable files in the CGI script directory, huh?! go fix that.
     cbz x3, L500
+
+    ;; gotta get the peer address for the environmental variables...
+    mov x16, SYS_getpeername
+    ldr_l w0, clientfd
+    adr_l x1, peer_addr
+    adr_l x2, peer_addr_len
+    svc #0x80
+    b.cs Lerror
 
     adr_l x0, env_var_str_buf
     adr_l x1, env_var_ptr_buf
