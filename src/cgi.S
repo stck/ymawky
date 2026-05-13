@@ -67,9 +67,14 @@ content_length: .ascii "CONTENT_LENGTH="
 content_type: .ascii "CONTENT_TYPE="
 .equ content_type_len, . - content_type
 
+server_name: .ascii "SERVER_NAME="
+.equ server_name_len, . - server_name
+
+server_port: .ascii "SERVER_PORT="
+.equ server_port_len, . - server_port
+
 http_host: .ascii "HTTP_HOST="
 .equ http_host_len, . - http_host
-
 
 ;; Stuff for the HTTP header
 cgi_server_headers: .ascii "Server: ymawky\r\n"
@@ -83,16 +88,6 @@ cgi_status: .ascii "HTTP/1.1 "
 ;; CGI script should send it's own status, but just in case it dooesn't
 cgi_200: .ascii "200 OK\r\n"
 .equ cgi_200_len, . - cgi_200
-
-;;cgi_conn_close: .ascii "Connection: close\r\n"
-;;.equ cgi_conn_close_len, . - cgi_conn_close
-
-;;cgi_server: .ascii "Server: ymawky\r\n"
-;;.equ cgi_server_len, . - cgi_server
-
-;;cgi_nosniff: .ascii "X-Content-Type-Options: nosniff\r\n"
-;;.equ cgi_nosniff_len, . - cgi_nosniff
-
 
 ;; Various linefeeds and such
 crlf: .ascii "\r\n"
@@ -114,6 +109,9 @@ cgiscr_conn: .ascii "connection:"
 cgiscr_content_type: .ascii "content-type:"
 .equ cgiscr_content_type_len, . - cgiscr_content_type
 
+host_header_str: .ascii "host:"
+.equ host_header_str_len, . - host_header_str
+
 .align 2
 peer_addr_len:.quad 16
 
@@ -128,7 +126,15 @@ status: .skip 4
 .equ cgi_buf_size, BUF_SIZE
 cgi_buf: .skip cgi_buf_size
 
-remote_addr_str_buf: .skip 16
+remote_addr_ip_buf: .skip 16
+remote_addr_ip_len: .skip 8
+remote_addr_port_buf: .skip 8
+remote_addr_port_len: .skip 8
+
+server_addr_ip_buf: .skip 16
+server_addr_ip_len: .skip 8
+server_addr_port_buf: .skip 8
+server_addr_port_len: .skip 8
 
 .equ env_var_str_buf_size, 4096
 env_var_str_buf: .skip env_var_str_buf_size
@@ -137,11 +143,13 @@ env_var_str_buf: .skip env_var_str_buf_size
 env_var_ptr_buf: .skip env_var_ptr_buf_size
 
 .align 3
-.equ script_name_buf_len, 256
-script_name_buf: .skip script_name_buf_len
+.equ script_name_buf_size, 256
+script_name_buf: .skip script_name_buf_size
+script_name_buf_len: .skip 8
 .align 3
-.equ script_path_buf_len, 4096
-script_path_buf: .skip script_path_buf_len
+.equ script_path_buf_size, 4096
+script_path_buf: .skip script_path_buf_size
+script_path_buf_len: .skip 8
 
 .text
 .align 2
@@ -192,18 +200,55 @@ Lccp_epilogue:
 
 
 .align 2
+;; input
+;; x0 -> addr struct
+;; x1 -> buffer for port
+;; x2 -> buffer for ip address
+;;
+;; returns
+;; x0 -> number of bytes written to port buffer
+;; x1 -> number of bytes written to ip buffer
 get_remote_addr:
-    stp x29, x30, [sp, #-48]!
+    stp x29, x30, [sp, #-64]!
     stp x19, x20, [sp, #16]
     stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
 
-    adr_l x19, peer_addr
-    add x19, x19, #4 ; offset for sin_addr in peer_addr
-    adr_l x20, remote_addr_str_buf
+    mov x19, x0
+    mov x20, x1
+    mov x23, x2
+
+Lport:
+    mov x24, #0 ; index into port buffer
+    add x19, x19, #2 ; offset for sin_port in addr struct
+    ldrh w0, [x19] ; loads port as little endian
+    rev16 w0, w0 ; converts to big-endian
+    bl itoa ; convert to decimal
+    ;; x0 -> ptr, x1 -> len
+
+    ;; copy the bytes
+    mov x2, #0
+1:
+    cmp x2, x1
+    b.hs 2f
+    ldrb w3, [x0, x2]
+    strb w3, [x20, x24]
+    add x24, x24, #1
+    add x2, x2, #1
+    b 1b
+2:
+    ;;fallthrough to Lip. x24 now contains bytes written into port buffer
+
+    add x19, x19, #2 ; offset for sin_addr in addr struct (+4 total, +2+2)
+    ;adr_l x20, remote_addr_str_buf
+    ;mov x20, x2
+    ;mov x20, x24
+    mov x20, x23
     mov x21, #0
     mov x22, #0
+Lip:
+    ;adr_l x19, peer_addr
 
-Loctet:
     cmp x22, #4
     b.hs Ldone
 
@@ -230,16 +275,18 @@ Loctet:
     mov w3, #'.'
     strb w3, [x20, x21]
     add x21, x21, #1
-    b Loctet
+    b Lip
 
 Ldone:
     strb wzr, [x20, x21] ; null terminate
 
-    mov x0, x21 ; return number of bytes written
+    mov x0, x24 ; return number of bytes written to port buf
+    mov x1, x21 ; return number of bytes written to ip buf
 
+    ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #48
+    ldp x29, x30, [sp], #64
     ret
 
 
@@ -297,26 +344,73 @@ set_constant_env_vars:
     b.cs scev_failure
 
     ;; REMOTE_ADDR=remote_addr_str_buf
-    mov x25, x0 ; gotta save current pointer
-    bl get_remote_addr
-    mov x26, x0 ; save the length from get_remote_addr too
-
-    mov x0, x26
     adr_l x1, remote_addr
     mov x2, remote_addr_len
-    adr_l x3, remote_addr_str_buf
-    mov x4, x26
-    adr_l x1, remote_addr
-    mov x2, remote_addr_len
-    adr_l x3, remote_addr_str_buf
-    mov x0, x25
+    adr_l x3, remote_addr_ip_buf
+    ldr_l x4, remote_addr_ip_len
     bl scev_add_kv_var
 
-    ;; REMOTE_HOST=remote_addr_str_buf
+    ;; REMOTE_HOST=remote_addr_ip_buf
     adr_l x1, remote_host
     mov x2, remote_host_len
-    adr_l x3, remote_addr_str_buf
-    mov x4, x26 ; saved from the get_remote_addr call
+    adr_l x3, remote_addr_ip_buf
+    ldr_l x4, remote_addr_ip_len
+    bl scev_add_kv_var
+
+    ;; SERVER_NAME=server_addr_ip_buf
+    adr_l x1, server_name
+    mov x2, server_name_len
+    adr_l x3, server_addr_ip_buf
+    ldr_l x4, server_addr_ip_len
+    bl scev_add_kv_var
+
+    ;; SERVER_PORT=server_addr_port_buf
+    adr_l x1, server_port
+    mov x2, server_port_len
+    adr_l x3, server_addr_port_buf
+    ldr_l x4, server_addr_port_len
+    bl scev_add_kv_var
+
+    ;; HTTP_HOST=hostname
+    ;; gotta save x0... it's the pointer for scev_add_*_var
+    mov x25, x0
+
+    ;; first, we look for a Host: header field
+    adr_l x0, buf
+    ldr_l x1, header_len
+    adr_l x2, host_header_str
+    mov x3, host_header_str_len
+    bl get_cgi_header_field
+    b.cs 2f ; if the Host: field doesn't exist, just skip this bit
+
+    ;; now actually set the HTTP_HOST= envvar
+    mov x3, x0 ; x0 -> pointer to the beginning of the value
+    mov x4, x1 ; x1 -> length of said value
+    mov x2, http_host_len
+    adr_l x1, http_host
+    mov x0, x25 ; restore it
+    bl scev_add_kv_var
+    b 3f ; skip the restore, since we already restored. that's only for no
+         ; header being found.
+2:
+    mov x0, x25 ; gotta restore if the host header field didn't exist, too...
+3:
+    ;; SCRIPT_NAME=script_name_buf
+    adr_l x1, script_name
+    mov x2, script_name_len
+
+    ;; This is pretty hack-y but i love it
+    ;; skip past the docroot so SCRIPT_NAME=/cgi-bin/whatever instead of
+    ;; www/cgi-bin/whatever.
+    ldr_l x5, docroot_len
+    ;; but we actually want the final / of docroot, so it's /cgi-bin/whatever
+    ;; instead of cgi-bin/whatever
+    sub x5, x5, #1
+    ldr_l x3, filename_str
+    add x3, x3, x5
+
+    ldr_l x4, filename_len
+    sub x4, x4, x5
     bl scev_add_kv_var
 
     ;; QUERY_STRING=query_str
@@ -333,20 +427,22 @@ set_constant_env_vars:
     cmp x3, #POST_ID
     b.eq 1f
     ;; if it's not PUT or POST, skip these
-    b 2f
+    b 3f
 1:
     mov x25, x0 ; save current pointer
 
     adr_l x0, buf ; this is the header from the clients req. i've gotta rename
     ldr_l x1, header_len
     bl parse_content_length
-    b.cs scev_failure
+    b.cs 2f ; restore pointer and go to the next one. if there's not content
+            ; length, there'll be no content type either. just dont set these
 
     ;; x0 should be content length from parse_content_length now.
     bl itoa
     ;; now x0 -> pointer to start of itoa'd string,
     ;;     x1 -> length of said string
     ;; CONTENT_LENGTH=(content-length from header)
+
     mov x3, x0
     mov x4, x1
     mov x0, x25 ; NOW we restore the previously-saved pointer for memcpy
@@ -354,7 +450,27 @@ set_constant_env_vars:
     mov x2, content_length_len
     bl scev_add_kv_var
 
+    ;; now we gotta do content-type
+    mov x25, x0 ; save that shit
+    ;; first, we look for a Content-Type: header field
+    adr_l x0, buf
+    ldr_l x1, header_len
+    adr_l x2, cgiscr_content_type
+    mov x3, cgiscr_content_type_len
+    bl get_cgi_header_field
+    b.cs 2f ; if the Host: field doesn't exist
+
+    ;; now actually set the CONTENT_TYPE= envvar
+    mov x3, x0 ; x0 -> pointer to the beginning of the value
+    mov x4, x1 ; x1 -> length of said value
+    mov x2, content_type_len
+    adr_l x1, content_type
+    mov x0, x25 ; restore it
+    bl scev_add_kv_var
+    b 3f ; skip the restore
 2:
+    mov x0, x25 ; gotta restore if the host header field didn't exist, too...
+3:
     ;; there's gotta be a better way to do this... oh well. that's a problem
     ;; for future tomt.
     ldr_l x3, request_id
@@ -527,29 +643,43 @@ pre_fork:
     adr_l x1, peer_addr
     adr_l x2, peer_addr_len
     svc #0x80
-    b.cs Lerror
+    b.cs L500
+
+    adr_l x0, peer_addr
+    adr_l x1, remote_addr_port_buf
+    adr_l x2, remote_addr_ip_buf
+    bl get_remote_addr
+    str_l x0, remote_addr_port_len
+    str_l x1, remote_addr_ip_len
+
+    adr_l x0, addr
+    adr_l x1, server_addr_port_buf
+    adr_l x2, server_addr_ip_buf
+    bl get_remote_addr
+    str_l x0, server_addr_port_len
+    str_l x1, server_addr_ip_len
+
+    bl get_script_path_elements
+    b.cs L500
+
+    adr_l x0, script_name_buf
+    str_l x0, argv
 
     adr_l x0, env_var_str_buf
     adr_l x1, env_var_ptr_buf
     bl set_constant_env_vars
 
-    bl get_script_path_elements
-    b.cs Lerror
-
-    adr_l x0, script_name_buf
-    str_l x0, argv
-
     ;; SYS_pipe()
     ;; NOTE: the pipe() syscall, unlike the libc wrapper, takes no arguments
     mov x16, #SYS_pipe
     svc #0x80
-    b.cs error
+    b.cs L500
     str_l w0, cgi_stdin_r
     str_l w1, cgi_stdin_w
 
     mov x16, #SYS_pipe
     svc #0x80
-    b.cs error
+    b.cs L500
     str_l w0, cgi_stdout_r
     str_l w1, cgi_stdout_w
 
@@ -557,7 +687,7 @@ about_to_fork:
     ;; SYS_fork()
     mov x16, SYS_fork
     svc #0x80
-    b.cs error ;; just bail if fork fails
+    b.cs L500 ;; just bail if fork fails
 
     cmp x1, #1 ; are we the child?
     b.eq cgi_child
@@ -568,12 +698,12 @@ cgi_parent:
     mov x16, SYS_close
     ldr_l w0, cgi_stdin_r
     svc #0x80
-    b.cs error
+    b.cs L500
     ;; close stdout_w
     mov x16, SYS_close
     ldr_l w0, cgi_stdout_w
     svc #0x80
-    b.cs error
+    b.cs L500
 
     ldr_l x0, request_id
     cb eq, x0, #PUT_ID, 1f
@@ -588,14 +718,15 @@ cgi_parent:
     adr_l x0, buf
     ldr_l x1, header_len
     bl parse_header_end
-    cbz x1, error
+    cbz x1, L400
     mov x20, x1
 
     ;; get content length
     adr_l x0, buf
     ldr_l x1, header_len
     bl parse_content_length
-    b.cs error
+    b.cs Lforward_done ; if there's no content length, we can just skip this
+                       ; whole bit!
 
     ldr_l x1, header_len
     mov x2, x20
@@ -617,7 +748,7 @@ cgi_parent:
     add x1, x1, x20
     mov x2, x24
     bl write_all
-    b.cs error
+    b.cs Lhfs_error
 
 Lforward_loop:
     ;; remaining = content_length - bytes_so_far
@@ -632,8 +763,8 @@ Lforward_loop:
     cmp x2, x25
     csel x2, x2, x25, lo
     svc #0x80
-    b.cs error
-    cbz x0, error ; client closed? before sending full body? dumb. error.
+    b.cs Lhfs_error
+    cbz x0, Lerror ; client closed? before sending full body? dumb. error.
     mov x26, x0 ; x26 = bytes just read
 
     ;; now forward those bytes to cgi_stdin_w
@@ -641,6 +772,7 @@ Lforward_loop:
     adr_l x1, cgi_buf
     mov x2, x26
     bl write_all
+    b.cs Lhfs_error
 
     add x24, x24, x26
     b Lforward_loop
@@ -650,7 +782,7 @@ Lforward_done:
     mov x16, SYS_close
     ldr_l w0, cgi_stdin_w
     svc #0x80
-    b.cs error
+    b.cs Lhfs_error
 
 Lnothing_to_forward:
     ;; this is a boolean. have we already output a header? 0 = no, 1 = yes
@@ -706,18 +838,21 @@ Lheader_read_loop:
     adr_l x1, cgi_status
     mov x2, cgi_status_len
     bl write_all
+    b.cs Lerror
 
     ;; value from cgi header
     ldr_l x0, clientfd
     mov x1, x23
     mov x2, x24
     bl write_all
+    b.cs Lerror
 
     ;; "\r\n"
     ldr_l x0, clientfd
     adr_l x1, crlf
     mov x2, crlf_len
     bl write_all
+    b.cs Lerror
 
     b Lstatus_done
 
@@ -727,12 +862,14 @@ Ldefault_status:
     adr_l x1, cgi_status
     mov x2, cgi_status_len
     bl write_all
+    b.cs Lerror
 
     ;; "200 OK\r\n"
     ldr_l x0, clientfd
     adr_l x1, cgi_200
     mov x2, cgi_200_len
     bl write_all
+    b.cs Lerror
     ;; fallthrough
 Lstatus_done:
     ;; phew. ok. now we gotta check for Content-Type
@@ -753,6 +890,7 @@ Lgot_ct:
     adr_l x1, cgi_server_headers
     mov x2, cgi_server_headers_len
     bl write_all
+    b.cs Lerror
 
     ;; now, we forward all of the script's headers, minus a couple:
     ;; the function here doesn't send Status: or Connection: header fields,
@@ -767,6 +905,7 @@ Lgot_ct:
     adr_l x1, crlf
     mov x2, #2
     bl write_all
+    b.cs Lerror
 
     ;; if we have any leftover bytes from the body, write em out now
     sub x2, x20, x22 ; leftover length = total - header length
@@ -775,6 +914,7 @@ Lgot_ct:
     adr_l x1, cgi_buf
     add x1, x1, x22 ; cgi_buff + header length offset
     bl write_all
+    b.cs Lerror
 
 1:
     mov x19, #1
@@ -792,6 +932,7 @@ Lbody_read_loop:
     ldr_l x0, clientfd
     adr_l x1, cgi_buf
     bl write_all
+    b.cs Lerror
 
     b Lbody_read_loop
 
@@ -800,7 +941,7 @@ Lread_failed:
     b.eq Lread_loop
 
     ;; otherwise, it's an error :(
-    b error
+    b Lerror
 
 Lloop_end:
     mov x16, SYS_wait4
@@ -820,43 +961,43 @@ cgi_child:
     mov x16, SYS_close
     ldr_l w0, cgi_stdin_w
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
     ;; close stdout_r
     mov x16, SYS_close
     ldr_l w0, cgi_stdout_r
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
 
     ;; duplicate the filedescriptors to be actually stdin/out
     mov x16, SYS_dup2
     ldr_l w0, cgi_stdin_r ; pipe fd
     mov x1, #0 ; stdin
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
 
     mov x16, SYS_dup2
     ldr_l w0, cgi_stdout_w ; pipe fd
     mov x1, #1 ; stdout
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
 
     ;; now that cgi_stdin/out_r/w has been duplicated to just stdin/out, we can
     ;; close the fds from pipe.
     mov x16, SYS_close
     ldr_l w0, cgi_stdin_r
     svc #0x80
-    b.cs error
-    
+    b.cs Lchild_error
+
     mov x16, SYS_close
     ldr_l w0, cgi_stdout_w
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
 
     ;; we gotta chdir into the right directory
     mov x16, #12 ; SYS_chdir
     adr_l x0, script_path_buf
     svc #0x80
-    b.cs error
+    b.cs Lchild_error
 
     ;; FINALLY we can FUCKING EXECVE
     mov x16, SYS_execve
@@ -869,13 +1010,15 @@ cgi_child:
     ;; return here after execve, something has gone horribly wrong... so just
     ;; consider it an error
     mov x0, #99
-    b error
+    b Lchild_error
 
-
-error:
-    ;; x0 is already errno
+Lchild_error:
     mov x16, SYS_exit
+    ;; x0 is usually errno now
     svc #0x80
+
+Lerror:
+    b child_end
 
 ;; find cgi header end, since cgi headers can use either \r\n\r\n or \n\n
 ;; NOTE for CGI response parsing ONLY. DONT USE ON CLIENT REQUESTS. for
@@ -1192,7 +1335,7 @@ get_script_path_elements:
     mov x0, x20
 1:
     cmp x0, #0
-    b.eq Lerror
+    b.eq Lgspe_error
     ldrb w1, [x19, x0]
     cmp w1, #'/'
     b.eq 2f
@@ -1206,7 +1349,7 @@ get_script_path_elements:
     ;; if the very last char was a /, it's a directory being requested, and
     ;; that's no good.
     cmp x0, x20
-    b.hs Lerror
+    b.hs Lgspe_error
 
     mov x3, x0 ; and in x3 lol
     mov x4, #0 ; offset into script_name_buf
@@ -1216,7 +1359,7 @@ get_script_path_elements:
 1:
     cmp x0, x20
     b.eq 2f
-    cmp x4, script_name_buf_len
+    cmp x4, script_name_buf_size
     b.eq 2f
     ldrb w2, [x19, x0]
     strb w2, [x1, x4]
@@ -1226,6 +1369,7 @@ get_script_path_elements:
 2:
     ;; make sure script_name_buf is null terminated
     strb wzr, [x1, x4]
+    str_l x4, script_name_buf_len ; save the length of the script name
 
     mov x4, #0
     adr_l x1, script_path_buf
@@ -1234,7 +1378,7 @@ get_script_path_elements:
 1:
     cmp x4, x3
     b.eq 2f
-    cmp x4, script_path_buf_len
+    cmp x4, script_path_buf_size
     b.eq 2f
     ldrb w2, [x19, x4]
     strb w2, [x1, x4]
@@ -1243,11 +1387,11 @@ get_script_path_elements:
 2:
     ;; and make sure script_path_buf is NULL terminated too!
     strb wzr, [x1, x4]
+    str_l x4, script_path_buf_len ; save the length of script_path_buf too
 
     b Lgspe_epilogue
 
-Lerror:
-    mov x27, #0x101
+Lgspe_error:
     cmp xzr, xzr ; set carry bit
     b 1f
 

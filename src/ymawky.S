@@ -18,7 +18,9 @@
 
 .global _main
 .global child_end
-.extern _sleep
+.global addr ; we use the addr struct in cgi.S to get server ip/port
+             ; we *could* hardcode 127.0.0.1, but where's the fun in that?
+             ; what if google dot com ends up running on ymawky huh?
 
 .data
 .align 3
